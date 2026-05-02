@@ -9,15 +9,25 @@ def test_defaults(monkeypatch):
         "SUMMARIZER_MODEL_NAME",
         "MAX_STEPS",
         "URL_NOTE_QUERY_STRIP",
+        "DEEPSEEK_API_KEY",
     ):
         monkeypatch.delenv(k, raising=False)
     cfg = Config.from_env()
-    assert cfg.agent_model_base_url == "http://localhost:8090/v1"
-    assert cfg.agent_model_name == "qwen3.5-27b"
-    assert cfg.summarizer_model_base_url == "http://localhost:8090/v1"
-    assert cfg.summarizer_model_name == "qwen3.5-27b"
+    assert cfg.agent_model_base_url == "https://api.deepseek.com"
+    assert cfg.agent_model_name == "deepseek-v4-flash"
+    assert cfg.summarizer_model_base_url == "https://api.deepseek.com"
+    assert cfg.summarizer_model_name == "deepseek-v4-flash"
     assert cfg.max_steps == 50
     assert cfg.url_note_query_strip is True
+    assert cfg.agent_api_key is None
+    assert cfg.summarizer_api_key is None
+
+
+def test_deepseek_api_key_picked_up(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-123")
+    cfg = Config.from_env()
+    assert cfg.agent_api_key == "sk-test-123"
+    assert cfg.summarizer_api_key == "sk-test-123"
 
 
 def test_env_overrides(monkeypatch):

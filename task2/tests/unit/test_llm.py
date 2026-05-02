@@ -25,7 +25,7 @@ class _FakeTransport:
 
 
 @pytest.mark.asyncio
-async def test_reasoning_disabled_by_default():
+async def test_basic_chat_no_extra_body():
     import httpx
 
     transport = _FakeTransport()
@@ -38,8 +38,41 @@ async def test_reasoning_disabled_by_default():
     sent = transport.last_request
     body = json.loads(sent.content)
     assert body["model"] == "m"
-    assert body["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+    # extra_body was vLLM-specific (Qwen thinking-mode) and is dropped
+    # so hosted providers (DeepSeek, OpenAI) don't reject it.
+    assert "extra_body" not in body
     assert msg["content"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_api_key_sets_authorization_header():
+    import httpx
+
+    transport = _FakeTransport()
+    client = LLMClient(
+        base_url="http://test/v1",
+        model="m",
+        api_key="sk-test-abc",
+        transport=httpx.MockTransport(transport.handle_async_request),
+    )
+    await client.chat([{"role": "user", "content": "hi"}])
+    sent = transport.last_request
+    assert sent.headers.get("authorization") == "Bearer sk-test-abc"
+
+
+@pytest.mark.asyncio
+async def test_no_api_key_means_no_authorization_header():
+    import httpx
+
+    transport = _FakeTransport()
+    client = LLMClient(
+        base_url="http://test/v1",
+        model="m",
+        transport=httpx.MockTransport(transport.handle_async_request),
+    )
+    await client.chat([{"role": "user", "content": "hi"}])
+    sent = transport.last_request
+    assert "authorization" not in {k.lower() for k in sent.headers}
 
 
 @pytest.mark.asyncio

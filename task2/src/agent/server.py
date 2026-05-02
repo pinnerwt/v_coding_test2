@@ -67,11 +67,13 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                 agent_llm = LLMClient(
                     cfg.agent_model_base_url,
                     cfg.agent_model_name,
+                    api_key=cfg.agent_api_key,
                     transport=llm_transport,
                 )
                 summ_llm = LLMClient(
                     cfg.summarizer_model_base_url,
                     cfg.summarizer_model_name,
+                    api_key=cfg.summarizer_api_key,
                     transport=llm_transport,
                 )
                 summarizer = Summarizer(summ_llm, notes)
