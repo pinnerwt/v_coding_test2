@@ -112,7 +112,7 @@ def _scripted_transport(tool_calls, distill_text: str | None, distill_status: in
 def _make_loop(*, llm, notes, browser, tmp_path, reason_log=None):
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=notes, current_url=lambda: browser.page.url, question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
     reg.register(_build_read_tool(browser))
     reg.register(
         Tool(
@@ -200,7 +200,7 @@ async def test_distill_failure_does_not_corrupt_result(tmp_path):
     trace_path = tmp_path / "t.jsonl"
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=notes, current_url=lambda: browser.page.url, question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
     reg.register(_build_read_tool(browser))
     reg.register(
         Tool(
@@ -265,7 +265,7 @@ async def test_distill_runs_after_max_steps_force_done(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=notes, current_url=lambda: browser.page.url, question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
     reg.register(_build_read_tool(browser))
     reg.register(
         Tool(
@@ -384,7 +384,7 @@ async def test_distill_runs_after_no_progress_force_done(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=notes, current_url=lambda: browser.page.url, question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
 
     async def noopA():
         return "same"

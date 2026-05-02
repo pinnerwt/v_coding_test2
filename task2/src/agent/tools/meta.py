@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
 
-from agent.notes_store import NotesStore
 from agent.tools.registry import Tool
 
 
@@ -39,8 +37,6 @@ class QuestionChannel:
 
 def build_meta_tools(
     *,
-    notes: NotesStore | None,
-    current_url: Callable[[], str],
     question_channel: QuestionChannel,
     reason_log: list[str] | None = None,
 ) -> dict:
@@ -65,14 +61,10 @@ def build_meta_tools(
 
 def build_meta_tool_list(
     *,
-    notes: NotesStore | None,
-    current_url: Callable[[], str],
     question_channel: QuestionChannel,
     reason_log: list[str] | None = None,
 ) -> list[Tool]:
     fns = build_meta_tools(
-        notes=notes,
-        current_url=current_url,
         question_channel=question_channel,
         reason_log=reason_log,
     )

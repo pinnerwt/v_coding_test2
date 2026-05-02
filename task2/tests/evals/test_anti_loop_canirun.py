@@ -79,11 +79,7 @@ async def test_canirun_no_read_loop(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(
-        notes=None,
-        current_url=lambda: "https://canirun.ai/",
-        question_channel=qc,
-    )
+    meta = build_meta_tools(question_channel=qc)
 
     async def read(offset: int = 0, thought: str = ""):
         body = await browser.page.evaluate("")

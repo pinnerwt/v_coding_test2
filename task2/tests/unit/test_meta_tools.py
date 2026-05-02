@@ -13,9 +13,7 @@ from agent.tools.meta import (
 
 @pytest.mark.asyncio
 async def test_done_raises_with_payload():
-    tools = build_meta_tools(
-        notes=None, current_url=lambda: "x", question_channel=QuestionChannel()
-    )
+    tools = build_meta_tools(question_channel=QuestionChannel())
     with pytest.raises(LoopDone) as exc:
         await tools["done"](status="success", answer="yay")
     assert exc.value.status == "success" and exc.value.answer == "yay"
@@ -24,16 +22,12 @@ async def test_done_raises_with_payload():
 @pytest.mark.asyncio
 async def test_note_tool_is_not_in_registry():
     tools = build_meta_tools(
-        notes=None,
-        current_url=lambda: "x",
         question_channel=QuestionChannel(),
         reason_log=[],
     )
     assert "note" not in tools
     assert "reason" in tools
     tool_list = build_meta_tool_list(
-        notes=None,
-        current_url=lambda: "x",
         question_channel=QuestionChannel(),
         reason_log=[],
     )
@@ -45,7 +39,7 @@ async def test_note_tool_is_not_in_registry():
 @pytest.mark.asyncio
 async def test_ask_user_question_blocks_until_answered():
     ch = QuestionChannel()
-    tools = build_meta_tools(notes=None, current_url=lambda: "x", question_channel=ch)
+    tools = build_meta_tools(question_channel=ch)
     task = asyncio.create_task(tools["ask_user_question"](question="size?"))
     await asyncio.sleep(0)
     assert ch.pending() == "size?"
@@ -58,8 +52,6 @@ async def test_ask_user_question_blocks_until_answered():
 async def test_reason_appends_to_session_log():
     log: list[str] = []
     tools = build_meta_tools(
-        notes=None,
-        current_url=lambda: "x",
         question_channel=QuestionChannel(),
         reason_log=log,
     )
@@ -73,8 +65,6 @@ async def test_reason_does_not_touch_notes_store(tmp_path):
     notes = NotesStore(tmp_path / "n.db")
     log: list[str] = []
     tools = build_meta_tools(
-        notes=notes,
-        current_url=lambda: "https://a.test/",
         question_channel=QuestionChannel(),
         reason_log=log,
     )

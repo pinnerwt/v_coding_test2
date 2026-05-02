@@ -95,7 +95,7 @@ async def test_read_auto_advances_on_repeat(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
     reg.register(_build_read_tool(browser))
     reg.register(
         Tool(
@@ -160,7 +160,7 @@ async def test_read_hidden_after_end_of_page_until_mutation(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=capturing_transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
     reg.register(_build_read_tool(browser))
     reg.register(
         Tool(
@@ -261,7 +261,7 @@ async def test_small_diff_injected_after_state_change(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
 
     async def click(id: int, thought: str = ""):
         browser.set_text(text_v2)  # mutate page
@@ -374,7 +374,7 @@ async def test_press_key_hidden_when_no_global_diff(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
 
     async def press_key(key: str, thought: str = ""):
         return f"pressed {key}"  # does not mutate browser text
@@ -447,7 +447,7 @@ async def test_list_interactive_auto_advances(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
     reg.register(
         Tool(
             "list_interactive",
@@ -512,7 +512,7 @@ async def test_list_interactive_auto_advance_handles_tool_error(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
     reg.register(
         Tool(
             "list_interactive",
@@ -582,7 +582,7 @@ async def test_read_grep_dedup_returns_synthetic_when_pattern_repeats(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
     reg.register(
         Tool(
             "read_grep",
@@ -665,7 +665,7 @@ async def test_list_interactive_hidden_when_hop_cap_exhausts(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=capturing_transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
     reg.register(
         Tool(
             "list_interactive",
@@ -747,7 +747,7 @@ async def test_wall_banner_injected_after_two_consecutive_walls(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=capturing_transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
     reg.register(_build_read_tool(browser))
     reg.register(
         Tool(
@@ -804,7 +804,7 @@ async def test_only_done_exposed_on_final_step(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=capturing_transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
     reg.register(_build_read_tool(browser))
     reg.register(
         Tool(
@@ -882,7 +882,7 @@ async def test_list_interactive_empty_treated_as_exhausted_on_arrival(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
 
     async def list_interactive(offset: int = 0, limit: int = 50, thought: str = ""):
         return "[]"
@@ -979,7 +979,7 @@ async def test_force_done_at_max_steps_replaces_max_steps_fallback(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
     reg.register(_build_read_tool(browser))
     reg.register(
         Tool(
@@ -1062,7 +1062,7 @@ async def test_force_done_on_no_progress_replaces_stuck_message(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
     reg.register(_build_read_tool(browser))
     reg.register(
         Tool(
@@ -1143,7 +1143,7 @@ async def test_force_done_on_asked_after_clarification_replaces_stuck_after_user
         return "any reply"
 
     qc.ask = _instant_ask  # type: ignore[assignment]
-    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    meta = build_meta_tools(question_channel=qc)
 
     async def noop():
         return "same"
@@ -1233,7 +1233,7 @@ async def test_regular_turns_use_tool_choice_required(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    build_meta_tools(question_channel=qc)
     reg.register(_build_read_tool(browser))
     reg.register(
         Tool(
@@ -1312,7 +1312,7 @@ async def test_loop_recovers_from_hallucinated_tool_name(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    build_meta_tools(question_channel=qc)
     reg.register(_build_read_tool(browser))
     reg.register(
         Tool(
@@ -1399,8 +1399,6 @@ async def test_loop_reason_call_lands_on_reason_log(tmp_path):
     from agent.tools.meta import build_meta_tool_list
 
     for t in build_meta_tool_list(
-        notes=None,
-        current_url=lambda: "https://x.test/",
         question_channel=qc,
         reason_log=reason_log,
     ):

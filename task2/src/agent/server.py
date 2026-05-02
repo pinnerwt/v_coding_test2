@@ -89,8 +89,6 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                 ):
                     reg.register(t)
                 for t in build_meta_tool_list(
-                    notes=notes,
-                    current_url=lambda: browser.page.url,
                     question_channel=qc,
                     reason_log=reason_log,
                 ):

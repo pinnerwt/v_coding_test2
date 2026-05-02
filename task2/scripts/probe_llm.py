@@ -24,9 +24,7 @@ async def main():
     reg = ToolRegistry()
     for t in build_browser_tool_list(_FakeBrowser()):
         reg.register(t)
-    for t in build_meta_tool_list(
-        notes=None, current_url=lambda: "", question_channel=QuestionChannel()
-    ):
+    for t in build_meta_tool_list(question_channel=QuestionChannel()):
         reg.register(t)
     tools = reg.to_openai_tools()
     print(f"tool count: {len(tools)}", file=sys.stderr)
