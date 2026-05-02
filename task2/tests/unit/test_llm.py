@@ -34,7 +34,7 @@ async def test_reasoning_disabled_by_default():
         model="m",
         transport=httpx.MockTransport(transport.handle_async_request),
     )
-    msg = await client.chat([{"role": "user", "content": "hi"}])
+    msg, _ = await client.chat([{"role": "user", "content": "hi"}])
     sent = transport.last_request
     body = json.loads(sent.content)
     assert body["model"] == "m"

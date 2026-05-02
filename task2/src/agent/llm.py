@@ -26,7 +26,7 @@ class LLMClient:
         tool_choice: str | dict | None = None,
         reasoning: bool = False,
         temperature: float = 0.2,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         payload: dict[str, Any] = {
             "model": self._model,
             "messages": messages,
@@ -40,7 +40,7 @@ class LLMClient:
         r = await self._client.post(f"{self._base_url}/chat/completions", json=payload)
         r.raise_for_status()
         data = r.json()
-        return data["choices"][0]["message"]
+        return data["choices"][0]["message"], data.get("usage")
 
     async def aclose(self) -> None:
         await self._client.aclose()

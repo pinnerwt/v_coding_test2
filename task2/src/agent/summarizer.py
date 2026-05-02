@@ -31,7 +31,7 @@ class Summarizer:
             f"Existing notes:\n{existing_notes or '(none)'}\n\n"
             f"Recent activity:\n{tape_slice}"
         )
-        msg = await self._llm.chat(
+        msg, _ = await self._llm.chat(
             [
                 {"role": "system", "content": _PROMPT},
                 {"role": "user", "content": user},

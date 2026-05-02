@@ -95,7 +95,7 @@ class ReactLoop:
                 page_header=self._page_header(),
                 replan_hint=replan_hint,
             )
-            msg = await self.llm.chat(messages, tools=tools, tool_choice="auto", reasoning=False)
+            msg, _ = await self.llm.chat(messages, tools=tools, tool_choice="auto", reasoning=False)
             tool_calls = msg.get("tool_calls") or []
             if not tool_calls:
                 self.trace.write({"type": "error", "payload": {"reason": "no tool call"}})
