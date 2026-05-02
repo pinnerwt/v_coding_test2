@@ -56,6 +56,7 @@ def build_messages(
     page_header: str,
     replan_hint: str | None,
     page_diff: str | None = None,
+    wall_banner: str | None = None,
 ) -> list[dict]:
     sys_parts = [system]
     if replan_hint:
@@ -76,6 +77,10 @@ def build_messages(
     if page_diff:
         user_parts.append("")
         user_parts.append(page_diff)
+
+    if wall_banner:
+        user_parts.append("")
+        user_parts.append(wall_banner)
 
     hist = _histogram_line(tape)
     if hist:

@@ -15,12 +15,21 @@ from agent.page_diff import (
 from agent.tools.meta import LoopDone, QuestionChannel
 from agent.tools.registry import ToolRegistry
 from agent.trace import TraceWriter
+from agent.wall_detect import Wall, detect_wall
 
 _SYSTEM = (
     "You are a web-browsing ReAct agent. Each turn, pick exactly one tool to call. "
     "Always include a brief `thought` argument explaining your choice. Element IDs "
     "come from list_interactive — never invent CSS selectors. Call done(status, "
-    "answer) when the user goal is satisfied or impossible."
+    "answer) when the user goal is satisfied or impossible. "
+    "If the goal asks for a value the page does not render exactly (e.g. asks for "
+    "'total downloads' but the page only shows 'Downloads last month'), commit "
+    'done(success, "<the rendered value> — <one-line caveat about what the page '
+    "does/doesn't show>\") rather than searching indefinitely for the exact phrase. "
+    'If a [BLOCKED: …] banner appears, commit done(failed, "blocked by <wall>") '
+    "on the next turn — the site is unreachable from this browser. "
+    "On the final allowed step you will only have the done tool — make your best "
+    "grounded commit then; do not stall."
 )
 
 _REPLAN_HINT = (
@@ -118,6 +127,8 @@ class ReactLoop:
         self._small_diff_threshold = small_diff_threshold
         self._diff_inject_max_lines = diff_inject_max_lines
         self._read_grep_seen: dict[str, int] = {}
+        self._wall_streak: int = 0
+        self._wall_kind: Wall | None = None
 
     def _current_url(self) -> str:
         try:
@@ -186,7 +197,33 @@ class ReactLoop:
                     self._hidden_tools.add("press_key")
             self.global_cache.update(current_text)
 
-            tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
+            wall = detect_wall(text=current_text, url=self._current_url())
+            if wall is not None:
+                if self._wall_kind == wall:
+                    self._wall_streak += 1
+                else:
+                    self._wall_kind = wall
+                    self._wall_streak = 1
+            else:
+                self._wall_kind = None
+                self._wall_streak = 0
+
+            wall_banner: str | None = None
+            if self._wall_streak >= 2 and self._wall_kind is not None:
+                wall_banner = (
+                    f"[BLOCKED: {self._wall_kind.value} wall — this site is unreachable "
+                    f"from this browser ({self._wall_streak} consecutive turns on the "
+                    f'interstitial). Commit done(failed, "blocked by '
+                    f'{self._wall_kind.value}") instead of retrying navigation.]'
+                )
+
+            is_final_step = step_idx == self.max_steps - 1
+            if is_final_step:
+                tools = self.registry.to_openai_tools_filtered(
+                    exclude={n for n in self.registry.names() if n != "done"}
+                )
+            else:
+                tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
             url = self._current_url()
             url_notes = self.notes.get(url) if self.notes else ""
             replan_hint = _REPLAN_HINT if state == "hinted" else None
@@ -199,6 +236,7 @@ class ReactLoop:
                 page_header=self._page_header(),
                 replan_hint=replan_hint,
                 page_diff=diff_block,
+                wall_banner=wall_banner,
             )
             if self.send_transient is not None:
                 await self.send_transient({"type": "llm_call_start"})

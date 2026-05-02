@@ -721,3 +721,125 @@ async def test_list_interactive_hidden_when_hop_cap_exhausts(tmp_path):
     assert not step2["obs"].startswith("[auto-advanced")
     # Fourth LLM turn (index 3) must not see `list_interactive` in its tool list.
     assert "list_interactive" not in captured_tools[3]
+
+
+@pytest.mark.asyncio
+async def test_wall_banner_injected_after_two_consecutive_walls(tmp_path):
+    """Two consecutive turns landing on a Cloudflare-shaped page should
+    cause the *third* turn's user prompt to carry a wall-banner block.
+    The first turn must not have it (single occurrence is not enough)."""
+    cf_text = (
+        "dictionary.cambridge.org | Performing security verification |  | "
+        "This website uses a security service to protect against malicious bots."
+    )
+    browser = _StubBrowser(cf_text)
+
+    transport = _mock_llm_calls(
+        [
+            ("read", {"offset": 0, "thought": "first read"}),
+            ("read", {"offset": 0, "thought": "second read, still on wall"}),
+            ("done", {"status": "failed", "answer": "blocked"}),
+        ]
+    )
+    captured_user: list[str] = []
+
+    async def capturing_handler(request):
+        body = json.loads(request.content.decode())
+        for m in body["messages"]:
+            if m["role"] == "user":
+                captured_user.append(m["content"])
+        return await transport.handler(request)
+
+    capturing_transport = httpx.MockTransport(capturing_handler)
+    llm = LLMClient("http://t/v1", "m", transport=capturing_transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    reg.register(_build_read_tool(browser))
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=5,
+    )
+    await loop.run("anything")
+
+    # First turn user prompt: no wall banner (only one wall observation so far,
+    # actually zero — the current_text grab is the very first thing).
+    assert "BLOCKED" not in captured_user[0]
+    # Third turn (index 2): after two consecutive wall pages, banner present.
+    assert "BLOCKED" in captured_user[2]
+    assert "Cloudflare" in captured_user[2] or "cloudflare" in captured_user[2].lower()
+
+
+@pytest.mark.asyncio
+async def test_only_done_exposed_on_final_step(tmp_path):
+    """At step_idx == max_steps-1, the tool list passed to the LLM must
+    contain only `done` — forcing the agent to commit on its last turn."""
+    browser = _StubBrowser("plain text page")
+
+    transport = _mock_llm_calls(
+        [
+            ("read", {"offset": 0, "thought": "first"}),
+            ("done", {"status": "success", "answer": "best guess on final step"}),
+        ]
+    )
+    captured_tools: list[list[str]] = []
+
+    async def capturing_handler(request):
+        body = json.loads(request.content.decode())
+        captured_tools.append([t["function"]["name"] for t in body.get("tools", [])])
+        return await transport.handler(request)
+
+    capturing_transport = httpx.MockTransport(capturing_handler)
+    llm = LLMClient("http://t/v1", "m", transport=capturing_transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    reg.register(_build_read_tool(browser))
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=2,  # iter 0 normal; iter 1 = final → only done exposed
+    )
+    await loop.run("anything")
+
+    # Turn 0: full tool list (read available).
+    assert "read" in captured_tools[0]
+    # Turn 1 (final step): only `done`.
+    assert captured_tools[1] == ["done"]
