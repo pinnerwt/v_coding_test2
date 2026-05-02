@@ -47,6 +47,7 @@ class ReactLoop:
         browser,
         question_channel: QuestionChannel,
         max_steps: int = 50,
+        send_transient=None,
     ):
         self.llm = llm
         self.registry = registry
@@ -56,6 +57,7 @@ class ReactLoop:
         self.browser = browser
         self.qc = question_channel
         self.max_steps = max_steps
+        self.send_transient = send_transient
         self.tape: list[dict[str, Any]] = []
         self.qa: list[tuple[str, str]] = []
 
@@ -95,7 +97,13 @@ class ReactLoop:
                 page_header=self._page_header(),
                 replan_hint=replan_hint,
             )
-            msg, _ = await self.llm.chat(messages, tools=tools, tool_choice="auto", reasoning=False)
+            if self.send_transient is not None:
+                await self.send_transient({"type": "llm_call_start"})
+            msg, usage = await self.llm.chat(
+                messages, tools=tools, tool_choice="auto", reasoning=False
+            )
+            if usage is not None:
+                self.trace.write({"type": "usage", "payload": usage})
             tool_calls = msg.get("tool_calls") or []
             if not tool_calls:
                 self.trace.write({"type": "error", "payload": {"reason": "no tool call"}})
