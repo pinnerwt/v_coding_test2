@@ -1,9 +1,9 @@
 # Task 2 — Generalized Browser Automation Agent
 
-A web-deployed ReAct agent that drives a headless Chromium (via Playwright) to accomplish open-ended user goals. The user enters a goal in a web UI, watches the agent's `(thought, action, observation)` tape stream live over a WebSocket, answers clarifying questions when the agent asks, and can replay past sessions for debugging.
+A web-deployed ReAct agent that drives a headless Chromium (via Playwright) to accomplish open-ended user goals. The user enters a goal in a single-page web UI, watches the agent's `(thought, action, observation)` tape stream live over a WebSocket, answers clarifying questions when the agent asks, and can revisit past sessions from a sidebar.
 
-- **Design doc:** [`docs/plans/2026-05-02-task2-web-agent-design.md`](../docs/plans/2026-05-02-task2-web-agent-design.md)
-- **Implementation plan:** [`docs/plans/2026-05-02-task2-web-agent.md`](../docs/plans/2026-05-02-task2-web-agent.md)
+- **Design docs:** [`2026-05-02-task2-web-agent-design.md`](../docs/plans/2026-05-02-task2-web-agent-design.md), [`2026-05-02-task2-spa-ui-design.md`](../docs/plans/2026-05-02-task2-spa-ui-design.md)
+- **Implementation plans:** [`2026-05-02-task2-web-agent.md`](../docs/plans/2026-05-02-task2-web-agent.md), [`2026-05-02-task2-spa-ui.md`](../docs/plans/2026-05-02-task2-spa-ui.md)
 - **Brainstorming prompt:** [`prompts/task2.md`](../prompts/task2.md)
 
 ## Architecture
@@ -25,10 +25,26 @@ uv sync
 uv run playwright install chromium    # one-time
 uv run pytest -v                       # unit + integration + eval
 uv run ruff check .                    # lint
-uv run uvicorn agent.server:build_app --factory --host 127.0.0.1 --port 8000
+uv run uvicorn agent.server:app_factory --factory --host 127.0.0.1 --port 8000
 ```
 
-Visit `http://127.0.0.1:8000/`. Enter a goal; trace cards stream as the agent acts. `/replay` lists past sessions saved as JSONL.
+Visit `http://127.0.0.1:8000/`. The single-page UI has three regions:
+
+- **Left sidebar** — collapsible list of past sessions (one entry per goal). Click to open; `+ New chat` to start fresh.
+- **Main panel** — chat-like transcript of the active session. Each step is a one-line collapsed card; click to expand thought + full args + full observation. A dashed "thinking…" card appears between steps while the LLM is in flight.
+- **Bottom monitor strip** — server / LLM-server health LEDs (5s poll), running token totals (prompt / completion) and step count for the current session.
+
+Deep links work: `?s=<session_id>` opens that session directly.
+
+### JSON endpoints (used by the SPA, callable directly)
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/sessions` | List of `{sid, goal, started_at, status}` |
+| `GET /api/trace/{sid}` | Full ordered list of trace events for a session |
+| `GET /api/llm_health` | `{llm: "up"\|"down", latency_ms}` (probes `AGENT_MODEL_BASE_URL/models` with a 2s timeout) |
+| `POST /api/run_sync` | Body `{goal}` → blocks until the loop finishes; for scripted runs / tests |
+| `WS /ws` | Send `{type:"goal", goal}`; receive `session_started` / `llm_call_start` / `step` / `usage` / `question` / `done` events |
 
 ## Environment variables
 
@@ -44,7 +60,7 @@ Visit `http://127.0.0.1:8000/`. Enter a goal; trace cards stream as the agent ac
 ## Storage
 
 - `data/url_notes.db` — SQLite key/value of URL → notes. Persists across sessions.
-- `data/traces/<session_id>.jsonl` — one event per line; the `/replay` UI reads these.
+- `data/traces/<session_id>.jsonl` — one event per line. Source of truth for the sidebar and `/api/trace/{sid}`. The first event is always `session_started` (carrying the goal), so the sidebar can label entries without a separate index.
 
 Mount a persistent volume at `/app/data` for cross-deploy survival.
 
