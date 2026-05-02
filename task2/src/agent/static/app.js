@@ -77,6 +77,7 @@ function renderEvent(ev) {
     const summary = `▸ ${esc(p.action)}(${esc(shortArgs(p.args))}) → ${esc(shortObs(p.obs))}`;
     const el = document.createElement("div");
     el.className = "card";
+    if (String(p.obs ?? "").startsWith("ERROR: blocked goto")) el.classList.add("warning");
     el.innerHTML =
       `<div class=summary>${summary}</div>` +
       `<div class=detail>` +
