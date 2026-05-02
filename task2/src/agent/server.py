@@ -123,6 +123,9 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                         question_channel=qc,
                         max_steps=cfg.max_steps,
                         send_transient=send_event,
+                        small_diff_threshold=cfg.small_diff_threshold,
+                        max_auto_advance_hops=cfg.max_auto_advance_hops,
+                        diff_inject_max_lines=cfg.diff_inject_max_lines,
                     )
                     loop_holder.append(loop)
                     return await loop.run(goal)

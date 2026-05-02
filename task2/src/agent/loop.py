@@ -93,6 +93,9 @@ class ReactLoop:
         question_channel: QuestionChannel,
         max_steps: int = 50,
         send_transient=None,
+        small_diff_threshold: int = 500,
+        max_auto_advance_hops: int = 32,
+        diff_inject_max_lines: int = 10,
     ):
         self.llm = llm
         self.registry = registry
@@ -109,11 +112,11 @@ class ReactLoop:
         self.read_cache = OffsetCache()
         self.list_interactive_cache = OffsetCache()
         self._read_limit = 1600
-        self._max_auto_advance_hops = 32
+        self._max_auto_advance_hops = max_auto_advance_hops
         self._hidden_tools: set[str] = set()
         self.global_cache = GlobalTextCache()
-        self._small_diff_threshold = 500
-        self._diff_inject_max_lines = 10
+        self._small_diff_threshold = small_diff_threshold
+        self._diff_inject_max_lines = diff_inject_max_lines
         self._read_grep_seen: dict[str, int] = {}
 
     def _current_url(self) -> str:

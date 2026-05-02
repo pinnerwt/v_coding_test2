@@ -86,3 +86,28 @@ async def test_loop_runs_done(tmp_path):
     assert out == {"status": "success", "answer": "42"}
     events = read_trace(tmp_path / "t.jsonl")
     assert events[-1]["type"] == "done"
+
+
+def test_react_loop_accepts_anti_loop_config_kwargs(tmp_path):
+    from agent.loop import ReactLoop
+
+    # No-op stub for everything; we're only checking the constructor signature.
+    class _Stub:
+        page = type("P", (), {"url": "https://a.test/"})()
+
+    loop = ReactLoop(
+        llm=None,
+        registry=None,
+        notes=None,
+        summarizer=None,
+        trace=None,
+        browser=_Stub(),
+        question_channel=None,
+        max_steps=1,
+        small_diff_threshold=200,
+        max_auto_advance_hops=8,
+        diff_inject_max_lines=4,
+    )
+    assert loop._small_diff_threshold == 200
+    assert loop._max_auto_advance_hops == 8
+    assert loop._diff_inject_max_lines == 4
