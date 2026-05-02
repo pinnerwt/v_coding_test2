@@ -111,3 +111,25 @@ def format_small_diff(*, previous: str, current: str, max_lines: int) -> str:
     removed = sum(1 for ln in body if ln.startswith("  - "))
     header = f"Page changes since last turn (+{added} / -{removed} lines):"
     return "\n".join([header, *body])
+
+
+def diff_char_size(*, previous: str, current: str) -> int:
+    """Sum of characters added and removed (line-level) between the two
+    strings. Used as the threshold metric for context injection."""
+    if previous == current:
+        return 0
+    prev_lines = previous.splitlines(keepends=False)
+    curr_lines = current.splitlines(keepends=False)
+    total = 0
+    for line in difflib.unified_diff(prev_lines, curr_lines, lineterm="", n=0):
+        if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
+            continue
+        if line.startswith("+") or line.startswith("-"):
+            total += len(line) - 1  # strip the leading +/-
+    return total
+
+
+def should_inject_diff(*, previous: str, current: str, threshold: int) -> bool:
+    if previous == current:
+        return False
+    return diff_char_size(previous=previous, current=current) <= threshold
