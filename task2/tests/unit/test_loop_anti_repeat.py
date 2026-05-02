@@ -1199,3 +1199,166 @@ async def test_force_done_on_asked_after_clarification_replaces_stuck_after_user
     )
     result = await loop.run("anything")
     assert result["answer"] == "asked-giveup committed"
+
+
+@pytest.mark.asyncio
+async def test_regular_turns_use_tool_choice_required(tmp_path):
+    """Every regular (non-coercion) LLM call from the loop must use
+    tool_choice="required" so the model cannot respond with prose or
+    fabricate a tool name outside the filtered tools list."""
+    text = "A" * 1600
+    browser = _StubBrowser(text)
+
+    captured_tool_choice: list[Any] = []
+    call_count = {"n": 0}
+
+    async def handler(request):
+        body = json.loads(request.content.decode())
+        captured_tool_choice.append(body.get("tool_choice"))
+        call_count["n"] += 1
+        # First (and only) regular turn: terminate via done.
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": f"c{call_count['n']}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "done",
+                                        "arguments": json.dumps(
+                                            {"status": "success", "answer": "k"}
+                                        ),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    reg.register(_build_read_tool(browser))
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            (lambda **kw: __import__("asyncio").sleep(0)),
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=10,
+    )
+    await loop.run("anything")
+
+    assert captured_tool_choice, "expected at least one regular LLM call"
+    assert captured_tool_choice[0] == "required", (
+        f"regular turn must use tool_choice='required', got {captured_tool_choice[0]!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_loop_recovers_from_hallucinated_tool_name(tmp_path):
+    """When the model emits a tool_call name not in the filtered tools
+    list (e.g., picks a masked tool), the LLM client raises
+    ToolNameNotAllowed; the loop must catch it, synthesize a feedback
+    step into the tape, and continue — not crash the run."""
+    text = "A" * 1600
+    browser = _StubBrowser(text)
+    call_count = {"n": 0}
+    captured_tape_actions: list[str] = []
+
+    async def handler(request):
+        call_count["n"] += 1
+        # First call: model fabricates a tool name not in the list ("ghost").
+        # Second call: model returns a valid done() to terminate.
+        if call_count["n"] == 1:
+            tc_name, tc_args = "ghost", {}
+        else:
+            tc_name, tc_args = "done", {"status": "success", "answer": "ok"}
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": f"c{call_count['n']}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc_name,
+                                        "arguments": json.dumps(tc_args),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    reg.register(_build_read_tool(browser))
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            (lambda **kw: __import__("asyncio").sleep(0)),
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=5,
+    )
+    result = await loop.run("anything")
+
+    captured_tape_actions = [t["action"] for t in loop.tape]
+    assert "ghost" in captured_tape_actions, (
+        f"expected hallucinated 'ghost' to be recorded as a feedback step, "
+        f"got tape actions {captured_tape_actions!r}"
+    )
+    feedback_step = next(t for t in loop.tape if t["action"] == "ghost")
+    assert "not available" in feedback_step["obs"]
+    assert result == {"status": "success", "answer": "ok"}

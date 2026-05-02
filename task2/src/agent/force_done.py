@@ -4,7 +4,7 @@ import json
 from typing import Any, Literal
 
 from agent.context import build_messages
-from agent.llm import LLMClient
+from agent.llm import LLMClient, ToolNameNotAllowed
 
 Trigger = Literal["max_steps", "no_progress", "asked_after_clarification"]
 
@@ -98,12 +98,15 @@ async def coerce_done_via_llm(
     )
     messages.append({"role": "user", "content": _instruction(trigger, n_no_progress)})
     messages.append({"role": "user", "content": _read_content_dump(tape)})
-    msg, _usage = await llm.chat(
-        messages,
-        tools=[done_tool_schema],
-        tool_choice={"type": "function", "function": {"name": "done"}},
-        reasoning=False,
-    )
+    try:
+        msg, _usage = await llm.chat(
+            messages,
+            tools=[done_tool_schema],
+            tool_choice={"type": "function", "function": {"name": "done"}},
+            reasoning=False,
+        )
+    except ToolNameNotAllowed:
+        return {"status": "failed", "answer": _placeholder(trigger, n_no_progress)}
     tool_calls = msg.get("tool_calls") or []
     if not tool_calls:
         return {"status": "failed", "answer": _placeholder(trigger, n_no_progress)}

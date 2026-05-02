@@ -5,6 +5,19 @@ from typing import Any
 import httpx
 
 
+class ToolNameNotAllowed(Exception):
+    """The model emitted a tool_call whose name is not in the `tools`
+    list passed to `chat()`. DeepSeek/OpenAI relay whatever the model
+    emits; only the client can enforce the contract."""
+
+    def __init__(self, name: str, allowed: set[str]):
+        super().__init__(
+            f"model emitted tool_call name {name!r} not in allowed set {sorted(allowed)!r}"
+        )
+        self.name = name
+        self.allowed = allowed
+
+
 class LLMClient:
     def __init__(
         self,
@@ -51,7 +64,18 @@ class LLMClient:
             )
             raise httpx.HTTPStatusError(msg, request=r.request, response=r)
         data = r.json()
-        return data["choices"][0]["message"], data.get("usage")
+        msg = data["choices"][0]["message"]
+        if tools is not None:
+            allowed = {
+                t["function"]["name"]
+                for t in tools
+                if isinstance(t, dict) and "function" in t and "name" in t["function"]
+            }
+            for tc in msg.get("tool_calls") or []:
+                name = tc.get("function", {}).get("name")
+                if name not in allowed:
+                    raise ToolNameNotAllowed(name, allowed)
+        return msg, data.get("usage")
 
     async def aclose(self) -> None:
         await self._client.aclose()

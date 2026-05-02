@@ -5,7 +5,7 @@ from typing import Any
 
 from agent.context import NOVELTY_WINDOW, _obs_fingerprint, build_messages
 from agent.force_done import coerce_done_via_llm
-from agent.llm import LLMClient
+from agent.llm import LLMClient, ToolNameNotAllowed
 from agent.page_diff import (
     GlobalTextCache,
     OffsetCache,
@@ -258,9 +258,49 @@ class ReactLoop:
             )
             if self.send_transient is not None:
                 await self.send_transient({"type": "llm_call_start"})
-            msg, usage = await self.llm.chat(
-                messages, tools=tools, tool_choice="auto", reasoning=False
-            )
+            try:
+                msg, usage = await self.llm.chat(
+                    messages, tools=tools, tool_choice="required", reasoning=False
+                )
+            except ToolNameNotAllowed as e:
+                obs = (
+                    f"tool {e.name!r} is not available right now (masked or "
+                    f"unknown). Pick from: {sorted(e.allowed)!r}."
+                )
+                self.tape.append(
+                    {"thought": "", "action": e.name, "args": {}, "obs": obs}
+                )
+                self.trace.write(
+                    {
+                        "type": "step",
+                        "payload": {
+                            "n": step_idx,
+                            "thought": "",
+                            "action": e.name,
+                            "args": {},
+                            "obs": obs,
+                        },
+                    }
+                )
+                self.no_progress_streak += 1
+                if self.no_progress_streak >= NO_PROGRESS_GIVEUP:
+                    url2 = self._current_url()
+                    url_notes2 = self.notes.get(url2) if self.notes else ""
+                    result = await coerce_done_via_llm(
+                        llm=self.llm,
+                        tape=self.tape,
+                        goal=goal,
+                        qa=list(self.qa),
+                        url=url2,
+                        url_notes=url_notes2,
+                        page_header=self._page_header(),
+                        trigger="no_progress",
+                        n_no_progress=self.no_progress_streak,
+                        done_tool_schema=self._done_tool_schema(),
+                    )
+                    self.trace.write({"type": "done", "payload": result})
+                    return result
+                continue
             if usage is not None:
                 self.trace.write({"type": "usage", "payload": usage})
             tool_calls = msg.get("tool_calls") or []

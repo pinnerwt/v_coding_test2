@@ -113,3 +113,100 @@ async def test_tools_passed_through():
     body = json.loads(transport.last_request.content)
     assert body["tools"] == tools
     assert body["tool_choice"] == "auto"
+
+
+@pytest.mark.asyncio
+async def test_chat_rejects_tool_call_name_not_in_tools():
+    """The DeepSeek API does not validate tool-call names against the
+    `tools` list server-side; it relays whatever the model emits. The
+    LLM client must validate names client-side and raise so the caller
+    can recover (e.g., synthesize a feedback obs and continue)."""
+    import httpx
+
+    from agent.llm import ToolNameNotAllowed
+
+    async def handler(request):
+        # Model hallucinates a call to "read" but only "done" is allowed.
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "c1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "read",
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = LLMClient(
+        base_url="http://test/v1",
+        model="m",
+        transport=httpx.MockTransport(handler),
+    )
+    tools = [{"type": "function", "function": {"name": "done", "parameters": {}}}]
+    with pytest.raises(ToolNameNotAllowed) as exc:
+        await client.chat(
+            [{"role": "user", "content": "hi"}],
+            tools=tools,
+            tool_choice="required",
+        )
+    assert exc.value.name == "read"
+    assert exc.value.allowed == {"done"}
+
+
+@pytest.mark.asyncio
+async def test_chat_passes_through_allowed_tool_call_name():
+    """A tool_call whose name IS in the tools list must flow through
+    unchanged."""
+    import httpx
+
+    async def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "c1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "done",
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = LLMClient(
+        base_url="http://test/v1",
+        model="m",
+        transport=httpx.MockTransport(handler),
+    )
+    tools = [{"type": "function", "function": {"name": "done", "parameters": {}}}]
+    msg, _ = await client.chat(
+        [{"role": "user", "content": "hi"}],
+        tools=tools,
+        tool_choice="required",
+    )
+    assert msg["tool_calls"][0]["function"]["name"] == "done"
