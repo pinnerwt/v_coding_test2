@@ -31,7 +31,7 @@ def _is_goto_allowed(url: str, allowlist: list[str]) -> bool:
         s = (src or "").lower()
         if not s:
             continue
-        if u in s or s in u:
+        if u in s:
             return True
     return False
 

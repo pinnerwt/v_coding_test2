@@ -31,11 +31,19 @@ def test_is_goto_allowed_substring_of_observed():
     )
 
 
-def test_is_goto_allowed_observed_is_substring_of_request():
-    # observed is a prefix of request → allowed
-    assert _is_goto_allowed(
+def test_is_goto_allowed_blocks_extension_under_observed_origin():
+    # Observed is a prefix of requested → BLOCKED.
+    # Otherwise observing any URL on a domain implicitly allows arbitrary
+    # deeper paths under it, defeating the grounding guard. Regression for
+    # the GAN case: observing `https://arxiv.org` must not allow the agent
+    # to recall `https://arxiv.org/abs/1406.2661` from training data.
+    assert not _is_goto_allowed(
         "https://en.wikipedia.org/wiki/Tokyo",
         ["https://en.wikipedia.org"],
+    )
+    assert not _is_goto_allowed(
+        "https://arxiv.org/abs/1406.2661",
+        ["https://arxiv.org"],
     )
 
 

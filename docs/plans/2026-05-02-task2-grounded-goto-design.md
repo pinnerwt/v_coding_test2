@@ -51,18 +51,16 @@ Before each `goto(url)`:
 
 `url` is allowed iff:
 - The goal contains no URL at all (constraint disabled for the session — see "Bootstrap" below), OR
-- `url` (case-insensitively) appears as a substring of, OR contains as
-  a substring, any allowlisted URL.
+- `url` (case-insensitively) appears as a substring of any allowlisted
+  URL. The match is one-directional: requested ⊆ observed.
 
 So if `https://en.wikipedia.org/wiki/Tokyo` was observed, both
 `goto https://en.wikipedia.org/wiki/Tokyo` and the prefix
-`goto https://en.wikipedia.org` are allowed. But
+`goto https://en.wikipedia.org` are allowed (shortening). But
 `goto https://arxiv.org/abs/1406.2661` when only `https://arxiv.org`
-was observed is blocked.
-
-Substring match is intentionally loose. False positives (allowing a
-slightly-off URL) are cheaper than false negatives (blocking a legit
-follow-up).
+was observed is blocked (extending past the observed prefix would let
+the agent recall arbitrary deeper paths from training data — exactly
+the GAN shortcut this design exists to stop).
 
 ### Block behavior
 
