@@ -1,10 +1,26 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from agent.browser_session import BrowserSession
 from agent.tools.registry import Tool
+
+_URL_RE = re.compile(r"https?://[^\s)\"'<>]+")
+_TRAILING_PUNCT = ".,;:!?)]}"
+
+
+def _extract_urls(text: str) -> list[str]:
+    out = []
+    for m in _URL_RE.finditer(text or ""):
+        url = m.group(0)
+        while url and url[-1] in _TRAILING_PUNCT:
+            url = url[:-1]
+        if url:
+            out.append(url)
+    return out
+
 
 _READ_LIMIT = 2000
 
