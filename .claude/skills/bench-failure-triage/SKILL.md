@@ -42,25 +42,51 @@ Before doing anything else:
 1. Verify `task2/data/bench/` contains at least one
    `webvoyager_*.json`. If not, abort with: `No prior bench results. Run: cd task2 && uv run python scripts/bench_webvoyager.py --limit 12`
 
-2. **Restart the agent server.** Always restart for a clean slate,
-   regardless of whether it is currently running. Three Bash calls:
+2. **Restart the agent server (best-effort).** A clean slate is
+   preferred. The bash sandbox does NOT block outbound HTTPS, so a
+   server started from `Bash run_in_background` can reach DeepSeek
+   normally. **Do NOT trust `/api/llm_health` as a readiness check** —
+   that endpoint hits `${AGENT_MODEL_BASE_URL}/models` without an Auth
+   header, so DeepSeek returns 401 and `llm_health` reports `down`
+   even when the LLM works fine for `/chat/completions`. Use it only
+   as a tiebreaker, never as an abort signal.
+
+   If any step is denied by permission policy, skip and continue.
+
+   Sequence (skip any denied step):
 
    a) Kill any existing process on port 8001:
       ```bash
       lsof -ti :8001 | xargs -r kill -9 2>/dev/null; sleep 1; true
       ```
 
-   b) Start the server (use Bash with `run_in_background: true`):
+   b) Start the server (Bash with `run_in_background: true`) — only
+      if step (a) succeeded OR no listener is currently on 8001:
       ```bash
       cd /home/pgi/v_coding_test2/task2 && set -a && . ./.env && set +a && AGENT_RESTRICT_GOTO=true uv run uvicorn agent.server:app_factory --factory --host 127.0.0.1 --port 8001
       ```
 
-   c) Wait for `/health` to return 200 (poll up to 60s):
+   c) Wait for the API to start serving (poll up to 60s):
       ```bash
-      until curl -sf http://127.0.0.1:8001/api/sessions > /dev/null; do sleep 2; done
+      until ss -ltn 2>/dev/null | grep -q ':8001'; do sleep 2; done
       ```
 
-   If health does not come up within ~60s, abort with: `Agent server failed to start. Read the background bash output for the uvicorn log.` Do not proceed.
+   If a fresh server fails to start within ~60s, abort with: `Agent
+   server failed to start. Read the background bash output for the
+   uvicorn log.` If you skipped (a)/(b) because the kill was denied,
+   just confirm something is on 8001 (`ss -ltn | grep ':8001'`) and
+   proceed against that. If nothing is listening AND you could not
+   start one, abort with: `No agent server reachable on
+   127.0.0.1:8001 and restart was denied by policy. Ask the user to
+   start the server.`
+
+   Verify env vars actually reached the uvicorn process before
+   running the bench (one-time sanity check):
+   ```bash
+   PID=$(pgrep -f 'uvicorn.*agent.server' | tail -1) && tr '\0' '\n' < /proc/$PID/environ | grep -E '^DEEPSEEK_API_KEY=' > /dev/null && echo "env ok" || echo "env missing"
+   ```
+   If `env missing`, the bench will fail — kill and retry the start
+   with a stronger env load (`env $(cat .env | xargs) uv run …`).
 
 Run these checks via Bash before any other tool call.
 
