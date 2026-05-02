@@ -35,6 +35,37 @@ def _action_key(name: str, args: dict) -> tuple:
     return (name, json.dumps(args or {}, sort_keys=True))
 
 
+def _check_read_grep_grounding(pattern: str, goal: str, last_read_obs: str | None) -> str | None:
+    """Block read_grep patterns that came from model prior knowledge rather
+    than observed page content. Pattern is allowed iff it appears (case-
+    insensitive) in the goal, or in the most recent `read` obs.
+
+    Returns None when allowed, or an error string suitable for synthetic obs.
+    """
+    if not pattern:
+        return None
+    p = pattern.lower()
+    if p in (goal or "").lower():
+        return None
+    if last_read_obs is not None and p in last_read_obs.lower():
+        return None
+    return (
+        f"ERROR: read_grep({pattern!r}) — pattern not present in the goal or in "
+        "the most recent read. Do not search for values you have only inferred. "
+        "If you want a UI element, use list_interactive. If you want body text, "
+        "use read first to surface terms, then grep on something you saw."
+    )
+
+
+def _last_read_obs(tape: list[dict]) -> str | None:
+    for step in reversed(tape):
+        if step.get("action") == "read":
+            obs = step.get("obs")
+            if isinstance(obs, str):
+                return obs
+    return None
+
+
 class ReactLoop:
     def __init__(
         self,
@@ -135,8 +166,17 @@ class ReactLoop:
                 }
                 state = "giveup"
 
+            grounding_block: str | None = None
+            if name == "read_grep" and isinstance(args, dict):
+                grounding_block = _check_read_grep_grounding(
+                    args.get("pattern", ""), goal, _last_read_obs(self.tape)
+                )
+
             try:
-                obs = await self.registry.call(name, args)
+                if grounding_block is not None:
+                    obs = grounding_block
+                else:
+                    obs = await self.registry.call(name, args)
             except LoopDone as d:
                 self.trace.write(
                     {
