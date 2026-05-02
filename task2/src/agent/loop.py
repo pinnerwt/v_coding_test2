@@ -5,6 +5,7 @@ from typing import Any
 
 from agent.context import NOVELTY_WINDOW, _obs_fingerprint, build_messages
 from agent.llm import LLMClient
+from agent.page_diff import OffsetCache, plan_read
 from agent.tools.meta import LoopDone, QuestionChannel
 from agent.tools.registry import ToolRegistry
 from agent.trace import TraceWriter
@@ -99,6 +100,10 @@ class ReactLoop:
         self.tape: list[dict[str, Any]] = []
         self.qa: list[tuple[str, str]] = []
         self.no_progress_streak = 0
+        self.read_cache = OffsetCache()
+        self.list_interactive_cache = OffsetCache()
+        self._read_limit = 1600
+        self._max_auto_advance_hops = 32
 
     def _current_url(self) -> str:
         try:
@@ -120,12 +125,10 @@ class ReactLoop:
         _last_three_match misses (e.g. click→list→read→escape→click→…)."""
         if len(self.tape) < NOVELTY_WINDOW + 1:
             return False
-        earlier = self.tape[: -NOVELTY_WINDOW]
+        earlier = self.tape[:-NOVELTY_WINDOW]
         recent = self.tape[-NOVELTY_WINDOW:]
         earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in earlier}
-        return all(
-            _obs_fingerprint(s.get("obs", "")) in earlier_fps for s in recent
-        )
+        return all(_obs_fingerprint(s.get("obs", "")) in earlier_fps for s in recent)
 
     def _last_action_args(self) -> tuple | None:
         if not self.tape:
@@ -193,11 +196,79 @@ class ReactLoop:
                     args.get("pattern", ""), goal, _last_read_obs(self.tape)
                 )
 
+            auto_advance_prefix: str | None = None
+            if name == "read" and isinstance(args, dict):
+                requested_offset = int(args.get("offset", 0) or 0)
+                try:
+                    text = await self.browser.page.evaluate("document.body.innerText")
+                except Exception:
+                    text = ""
+                plan = plan_read(
+                    text=text,
+                    requested_offset=requested_offset,
+                    cache=self.read_cache,
+                    read_limit=self._read_limit,
+                    max_hops=self._max_auto_advance_hops,
+                )
+                if plan.exhausted:
+                    obs = (
+                        f"(end of page; tried offsets up to {plan.served_offset}, "
+                        f"page length {len(text)}). Try read_grep or done()."
+                    )
+                    new_fp = _obs_fingerprint(obs)
+                    earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in self.tape}
+                    self.tape.append(
+                        {
+                            "thought": thought,
+                            "action": name,
+                            "args": args,
+                            "obs": obs,
+                        }
+                    )
+                    if new_fp in earlier_fps:
+                        self.no_progress_streak += 1
+                    else:
+                        self.no_progress_streak = 0
+                    self.trace.write(
+                        {
+                            "type": "step",
+                            "payload": {
+                                "n": step_idx,
+                                "thought": thought,
+                                "action": name,
+                                "args": args,
+                                "obs": obs,
+                            },
+                        }
+                    )
+                    if self.no_progress_streak >= NO_PROGRESS_GIVEUP:
+                        answer = (
+                            f"stuck: no novel observation for {self.no_progress_streak} "
+                            "consecutive steps"
+                        )
+                        self.trace.write(
+                            {
+                                "type": "done",
+                                "payload": {"status": "failed", "answer": answer},
+                            }
+                        )
+                        return {"status": "failed", "answer": answer}
+                    continue
+                args = {**args, "offset": plan.served_offset}
+                self.read_cache.record(offset=plan.served_offset, served=plan.served_text)
+                if plan.advanced_from is not None:
+                    auto_advance_prefix = (
+                        f"[auto-advanced {plan.advanced_from}→{plan.served_offset}: "
+                        f"{plan.advanced_from} unchanged since prior read]"
+                    )
+
             try:
                 if grounding_block is not None:
                     obs = grounding_block
                 else:
                     obs = await self.registry.call(name, args)
+                    if auto_advance_prefix is not None and isinstance(obs, str):
+                        obs = f"{auto_advance_prefix} {obs}"
             except LoopDone as d:
                 self.trace.write(
                     {
@@ -252,8 +323,7 @@ class ReactLoop:
 
             if self.no_progress_streak >= NO_PROGRESS_GIVEUP:
                 answer = (
-                    f"stuck: no novel observation for {self.no_progress_streak} "
-                    "consecutive steps"
+                    f"stuck: no novel observation for {self.no_progress_streak} consecutive steps"
                 )
                 self.trace.write(
                     {"type": "done", "payload": {"status": "failed", "answer": answer}}
