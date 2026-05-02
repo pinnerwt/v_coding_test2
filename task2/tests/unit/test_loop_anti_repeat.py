@@ -1362,3 +1362,82 @@ async def test_loop_recovers_from_hallucinated_tool_name(tmp_path):
     feedback_step = next(t for t in loop.tape if t["action"] == "ghost")
     assert "not available" in feedback_step["obs"]
     assert result == {"status": "success", "answer": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_loop_reason_call_lands_on_reason_log(tmp_path):
+    """Agent calls reason("hello"); next loop iteration sees it on
+    self.reason_log AND in the rendered user message."""
+    browser = _StubBrowser("page text")
+    call_count = {"n": 0}
+    captured_user_messages: list[str] = []
+
+    async def handler(request):
+        body = json.loads(request.content.decode())
+        for m in body["messages"]:
+            if m["role"] == "user":
+                captured_user_messages.append(m["content"])
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            tc_name, tc_args = "reason", {"text": "hello"}
+        else:
+            tc_name, tc_args = "done", {"status": "success", "answer": "ok"}
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": f"c{call_count['n']}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc_name,
+                                        "arguments": json.dumps(tc_args),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    # Shared reason_log between meta-tool closure and ReactLoop.
+    reason_log: list[str] = []
+    from agent.tools.meta import build_meta_tool_list
+
+    for t in build_meta_tool_list(
+        notes=None,
+        current_url=lambda: "https://x.test/",
+        question_channel=qc,
+        reason_log=reason_log,
+    ):
+        reg.register(t)
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=5,
+        reason_log=reason_log,
+    )
+    result = await loop.run("anything")
+
+    assert loop.reason_log == ["hello"]
+    assert loop.reason_log is reason_log
+    assert result == {"status": "success", "answer": "ok"}
+    # The second user message (turn after reason() call) must show the entry.
+    assert "Reasoning so far:" in captured_user_messages[1]
+    assert "- hello" in captured_user_messages[1]

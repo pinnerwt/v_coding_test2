@@ -57,6 +57,7 @@ def build_messages(
     replan_hint: str | None,
     page_diff: str | None = None,
     wall_banner: str | None = None,
+    reason_log: list[str] | None = None,
 ) -> list[dict]:
     sys_parts = [system]
     if replan_hint:
@@ -71,6 +72,17 @@ def build_messages(
     user_parts.append("")
     user_parts.append("URL notes:")
     user_parts.append(url_notes or "(none)")
+    if reason_log is not None:
+        user_parts.append("")
+        user_parts.append("Reasoning so far:")
+        if reason_log:
+            rendered = "\n".join(f"- {r}" for r in reason_log)
+            # FIFO trim: keep newest, drop oldest, until ≤4 KB.
+            while len(rendered.encode()) > 4096 and "\n" in rendered:
+                rendered = rendered.split("\n", 1)[1]
+            user_parts.append(rendered)
+        else:
+            user_parts.append("(none)")
     user_parts.append("")
     user_parts.append(page_header)
 

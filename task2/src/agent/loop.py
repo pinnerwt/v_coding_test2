@@ -106,6 +106,7 @@ class ReactLoop:
         small_diff_threshold: int = 500,
         max_auto_advance_hops: int = 32,
         diff_inject_max_lines: int = 10,
+        reason_log: list[str] | None = None,
     ):
         self.llm = llm
         self.registry = registry
@@ -130,6 +131,7 @@ class ReactLoop:
         self._read_grep_seen: dict[str, int] = {}
         self._wall_streak: int = 0
         self._wall_kind: Wall | None = None
+        self.reason_log: list[str] = reason_log if reason_log is not None else []
 
     def _current_url(self) -> str:
         try:
@@ -255,6 +257,7 @@ class ReactLoop:
                 replan_hint=replan_hint,
                 page_diff=diff_block,
                 wall_banner=wall_banner,
+                reason_log=self.reason_log,
             )
             if self.send_transient is not None:
                 await self.send_transient({"type": "llm_call_start"})

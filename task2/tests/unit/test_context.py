@@ -131,3 +131,74 @@ def test_build_messages_page_diff_default_is_none():
         replan_hint=None,
     )
     assert any(m["role"] == "user" for m in msgs)
+
+
+def test_reason_log_renders_under_dedicated_block():
+    msgs = build_messages(
+        system="sys",
+        goal="g",
+        qa=[],
+        url_notes="(none)",
+        tape=[],
+        page_header="URL=https://x",
+        replan_hint=None,
+        reason_log=["a", "b"],
+    )
+    user = next(m for m in msgs if m["role"] == "user")
+    assert "Reasoning so far:" in user["content"]
+    assert "- a" in user["content"]
+    assert "- b" in user["content"]
+
+
+def test_reason_log_block_says_none_when_empty():
+    msgs = build_messages(
+        system="sys",
+        goal="g",
+        qa=[],
+        url_notes="(none)",
+        tape=[],
+        page_header="URL=https://x",
+        replan_hint=None,
+        reason_log=[],
+    )
+    user = next(m for m in msgs if m["role"] == "user")
+    assert "Reasoning so far:\n(none)" in user["content"]
+
+
+def test_reason_log_block_omitted_when_kwarg_not_passed():
+    """Backward-compat: callers that don't yet pass reason_log get the
+    same prompt as before — no Reasoning so far: block at all."""
+    msgs = build_messages(
+        system="sys",
+        goal="g",
+        qa=[],
+        url_notes="(none)",
+        tape=[],
+        page_header="URL=https://x",
+        replan_hint=None,
+    )
+    user = next(m for m in msgs if m["role"] == "user")
+    assert "Reasoning so far:" not in user["content"]
+
+
+def test_reason_log_fifo_trims_oldest_when_over_4kb():
+    """Cap is 4 KB encoded; oldest lines drop first."""
+    big = ["line0: " + "x" * 200] + [f"line{i}: " + "y" * 200 for i in range(1, 30)]
+    msgs = build_messages(
+        system="sys",
+        goal="g",
+        qa=[],
+        url_notes="(none)",
+        tape=[],
+        page_header="URL=https://x",
+        replan_hint=None,
+        reason_log=big,
+    )
+    user = next(m for m in msgs if m["role"] == "user")
+    # Find the rendered reason block
+    reason_section = user["content"].split("Reasoning so far:\n", 1)[1]
+    # Stop at the next double-newline (next prompt section)
+    reason_section = reason_section.split("\n\n", 1)[0]
+    assert len(reason_section.encode()) <= 4096
+    assert "line29" in reason_section  # newest kept
+    assert "line0" not in reason_section  # oldest dropped

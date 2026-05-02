@@ -79,6 +79,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                 summarizer = Summarizer(summ_llm, notes)
                 reg = ToolRegistry()
                 loop_holder: list = []
+                reason_log: list[str] = []
 
                 def allowlist_sources():
                     if not loop_holder:
@@ -99,6 +100,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                     notes=notes,
                     current_url=lambda: browser.page.url,
                     question_channel=qc,
+                    reason_log=reason_log,
                 ):
                     reg.register(t)
 
@@ -126,6 +128,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                         small_diff_threshold=cfg.small_diff_threshold,
                         max_auto_advance_hops=cfg.max_auto_advance_hops,
                         diff_inject_max_lines=cfg.diff_inject_max_lines,
+                        reason_log=reason_log,
                     )
                     loop_holder.append(loop)
                     return await loop.run(goal)
