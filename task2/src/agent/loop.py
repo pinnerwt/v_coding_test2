@@ -287,12 +287,22 @@ class ReactLoop:
                 else:
                     state = "none"
             elif state == "asked" and last_aa is not None and new_aa == last_aa:
-                name = "done"
-                args = {
-                    "status": "failed",
-                    "answer": "stuck after user clarification",
-                }
-                state = "giveup"
+                url2 = self._current_url()
+                url_notes2 = self.notes.get(url2) if self.notes else ""
+                result = await coerce_done_via_llm(
+                    llm=self.llm,
+                    tape=self.tape,
+                    goal=goal,
+                    qa=list(self.qa),
+                    url=url2,
+                    url_notes=url_notes2,
+                    page_header=self._page_header(),
+                    trigger="asked_after_clarification",
+                    n_no_progress=None,
+                    done_tool_schema=self._done_tool_schema(),
+                )
+                self.trace.write({"type": "done", "payload": result})
+                return result
 
             read_grep_synthetic: str | None = None
             if name == "read_grep" and isinstance(args, dict):

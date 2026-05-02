@@ -1102,3 +1102,100 @@ async def test_force_done_on_no_progress_replaces_stuck_message(tmp_path):
     result = await loop.run("anything")
     assert result["answer"] == "no_progress committed"
     assert any("no novel observation" in m for m in captured_user_messages)
+
+
+@pytest.mark.asyncio
+async def test_force_done_on_asked_after_clarification_replaces_stuck_after_user(tmp_path):
+    """The asked-state giveup branch must route through coerce_done_via_llm
+    rather than synthesizing a hard-coded done(failed, 'stuck after user
+    clarification')."""
+    browser = _StubBrowser("static body")
+    call_count = {"n": 0}
+
+    async def handler(request):
+        body = json.loads(request.content.decode())
+        body_user_combined = "\n".join(
+            m["content"] for m in body["messages"] if m["role"] == "user"
+        )
+        call_count["n"] += 1
+        if "User clarification" in body_user_combined:
+            tc_name, tc_args = "done", {"status": "failed", "answer": "asked-giveup committed"}
+        else:
+            tc_name, tc_args = "noop", {}
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": f"c{call_count['n']}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc_name,
+                                        "arguments": json.dumps(tc_args),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+
+    # Bypass the future-based question channel: any ask returns immediately.
+    async def _instant_ask(question: str) -> str:
+        return "any reply"
+
+    qc.ask = _instant_ask  # type: ignore[assignment]
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+
+    async def noop():
+        return "same"
+
+    reg.register(Tool("noop", "noop", {"type": "object", "properties": {}}, noop))
+    reg.register(
+        Tool(
+            "ask_user_question",
+            "ask",
+            {
+                "type": "object",
+                "properties": {"question": {"type": "string"}},
+                "required": ["question"],
+            },
+            meta["ask_user_question"],
+        )
+    )
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=50,
+    )
+    result = await loop.run("anything")
+    assert result["answer"] == "asked-giveup committed"
