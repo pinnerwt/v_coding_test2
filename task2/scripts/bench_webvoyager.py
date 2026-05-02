@@ -22,27 +22,29 @@ DATA = ROOT / "eval" / "webvoyager_tier1.json"
 OUT_DIR = ROOT / "data" / "bench"
 
 
-def _count_blocks(data_dir: Path, since_ts: float) -> int:
+def _count_blocks(data_dir: Path, before: set[Path]) -> int:
     traces_dir = data_dir / "traces"
     if not traces_dir.exists():
         return 0
-    candidates = [p for p in traces_dir.glob("*.jsonl") if p.stat().st_mtime >= since_ts]
-    if not candidates:
+    new_files = [p for p in traces_dir.glob("*.jsonl") if p not in before]
+    if not new_files:
         return 0
-    newest = max(candidates, key=lambda p: p.stat().st_mtime)
+    newest = max(new_files, key=lambda p: p.stat().st_mtime)
     n = 0
-    for line in newest.read_text().splitlines():
-        try:
-            if json.loads(line).get("type") == "goto_blocked":
-                n += 1
-        except Exception:
-            pass
+    with newest.open() as f:
+        for line in f:
+            try:
+                if json.loads(line).get("type") == "goto_blocked":
+                    n += 1
+            except json.JSONDecodeError:
+                pass
     return n
 
 
 async def run_one(client: httpx.AsyncClient, case: dict, timeout_s: float, data_dir: Path) -> dict:
     goal = f"Go to {case['web']} and {case['ques']}"
-    t0_wall = time.time()
+    traces_dir = data_dir / "traces"
+    before = set(traces_dir.glob("*.jsonl")) if traces_dir.exists() else set()
     t0 = time.monotonic()
     try:
         r = await client.post(
@@ -51,7 +53,7 @@ async def run_one(client: httpx.AsyncClient, case: dict, timeout_s: float, data_
             timeout=httpx.Timeout(timeout_s, connect=5.0),
         )
         elapsed_ms = int((time.monotonic() - t0) * 1000)
-        blocks = _count_blocks(data_dir, t0_wall)
+        blocks = _count_blocks(data_dir, before)
         if r.status_code != 200:
             return {
                 "id": case["id"],
@@ -77,7 +79,7 @@ async def run_one(client: httpx.AsyncClient, case: dict, timeout_s: float, data_
             "web": case["web_name"],
             "status": "timeout",
             "elapsed_ms": int((time.monotonic() - t0) * 1000),
-            "blocks": _count_blocks(data_dir, t0_wall),
+            "blocks": _count_blocks(data_dir, before),
         }
 
 
