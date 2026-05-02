@@ -114,3 +114,29 @@ async def test_goto_unrestricted_when_sources_callback_returns_no_urls():
     obs = await tools["goto"]("https://anywhere.test/")
     assert "navigated to" in obs
     sess.page.goto.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_goto_uses_domcontentloaded_with_20s_timeout():
+    # `networkidle` rarely settles within 10s on adtech-heavy news sites,
+    # producing false-negative timeouts on otherwise readable pages
+    # (regression: WebVoyager case 110 BBC News, 2026-05-02 trace
+    # fbf9c12d56974335a04965ddf0b3e62a — step 0 timed out, step 12 same
+    # URL succeeded after 11 wasted steps).
+    sess = _fake_session("https://example.test/")
+    tools = build_browser_tools(sess)
+    await tools["goto"]("https://example.test/")
+    sess.page.goto.assert_awaited_once_with(
+        "https://example.test/", wait_until="domcontentloaded", timeout=20_000
+    )
+
+
+@pytest.mark.asyncio
+async def test_back_uses_domcontentloaded_with_20s_timeout():
+    sess = _fake_session("https://example.test/")
+    sess.page.go_back = AsyncMock(return_value=None)
+    tools = build_browser_tools(sess)
+    await tools["back"]()
+    sess.page.go_back.assert_awaited_once_with(
+        wait_until="domcontentloaded", timeout=20_000
+    )

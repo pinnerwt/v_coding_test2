@@ -62,14 +62,14 @@ def build_browser_tools(
                     "observations or goal. Use list_interactive + click to navigate."
                 )
         try:
-            await session.page.goto(url, wait_until="networkidle", timeout=10_000)
+            await session.page.goto(url, wait_until="domcontentloaded", timeout=20_000)
             return f"navigated to {session.page.url}"
         except Exception as e:
             return f"ERROR: {e}"
 
     async def back() -> str:
         try:
-            await session.page.go_back(wait_until="networkidle", timeout=10_000)
+            await session.page.go_back(wait_until="domcontentloaded", timeout=20_000)
             return f"back to {session.page.url}"
         except Exception as e:
             return f"ERROR: {e}"
