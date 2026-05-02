@@ -308,7 +308,9 @@ class ReactLoop:
                 served_str = await _safe_call_li(served_offset)
                 hops = 0
                 exhausted = False
-                if not served_str.startswith("ERROR:"):
+                if served_str.strip() == "[]":
+                    exhausted = True
+                elif not served_str.startswith("ERROR:"):
                     while self.list_interactive_cache.was_served(
                         offset=served_offset, candidate=served_str
                     ):
@@ -319,6 +321,9 @@ class ReactLoop:
                         served_offset += limit
                         served_str = await _safe_call_li(served_offset)
                         if served_str.startswith("ERROR:"):
+                            break
+                        if served_str.strip() == "[]":
+                            exhausted = True
                             break
                 if served_str.startswith("ERROR:"):
                     obs_override = served_str

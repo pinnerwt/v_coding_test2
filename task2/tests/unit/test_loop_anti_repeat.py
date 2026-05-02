@@ -843,3 +843,100 @@ async def test_only_done_exposed_on_final_step(tmp_path):
     assert "read" in captured_tools[0]
     # Turn 1 (final step): only `done`.
     assert captured_tools[1] == ["done"]
+
+
+@pytest.mark.asyncio
+async def test_list_interactive_empty_treated_as_exhausted_on_arrival(tmp_path):
+    """When list_interactive returns "[]", treat as exhausted-on-arrival:
+    inject the synthetic 'end of interactive list' obs and hide the tool
+    from the next turn — same as the hop-cap-hide arm."""
+    browser = _StubBrowser("body text")
+
+    captured_tools: list[list[str]] = []
+
+    async def handler(request):
+        body = json.loads(request.content.decode())
+        captured_tools.append([t["function"]["name"] for t in body.get("tools", [])])
+        # Step 0: list_interactive(offset=0) (will return "[]"); step 1: done.
+        idx = len(captured_tools) - 1
+        if idx == 0:
+            tc_name, tc_args = "list_interactive", {"offset": 0, "limit": 50}
+        else:
+            tc_name, tc_args = "done", {"status": "success", "answer": "ok"}
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "c1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc_name,
+                                        "arguments": json.dumps(tc_args),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+
+    async def list_interactive(offset: int = 0, limit: int = 50, thought: str = ""):
+        return "[]"
+
+    reg.register(
+        Tool(
+            "list_interactive",
+            "list_interactive",
+            {
+                "type": "object",
+                "properties": {
+                    "offset": {"type": "integer"},
+                    "limit": {"type": "integer"},
+                    "thought": {"type": "string"},
+                },
+            },
+            list_interactive,
+        )
+    )
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=5,
+    )
+    await loop.run("anything")
+
+    # Step 0 obs is the exhausted-on-arrival synthetic message.
+    assert loop.tape[0]["obs"].startswith("(end of interactive list")
+    # Turn 1 (the next LLM call) MUST NOT have list_interactive in tools.
+    assert "list_interactive" not in captured_tools[1]
