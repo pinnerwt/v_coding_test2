@@ -16,3 +16,5 @@ I'm more aware of Terminal read(offset=0) loop. When we remove read from the lis
 Make sure that deepseek does not mask ungiven tool names at server side. In that case, we might want to enforce the prompt/post verification on agent side.
 
 /superpowers:brainstorming the note did help for longer memory after K = 8 turns of actions. But the memory right now is more "local" which means that it is task specific but not page specific. What do you think? I think we need both: "reason" for in-session scratchpad and "note" for page knowledge. I think we should run "note" everytime we finished a job, and "reason" during the task session.
+
+Outcome of the reason/note split: the agent calls `reason(text)` to record short thoughts it wants to keep past the rolling action window — in-session only, does not persist. Page-knowledge for future visits is captured automatically when `done()` fires; the system extracts page-facts from the session into the URL's note row via a post-done distillation step. The agent does not write notes by hand — the `note` tool is removed.

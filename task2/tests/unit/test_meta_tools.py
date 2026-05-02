@@ -3,7 +3,12 @@ import asyncio
 import pytest
 
 from agent.notes_store import NotesStore
-from agent.tools.meta import LoopDone, QuestionChannel, build_meta_tools
+from agent.tools.meta import (
+    LoopDone,
+    QuestionChannel,
+    build_meta_tool_list,
+    build_meta_tools,
+)
 
 
 @pytest.mark.asyncio
@@ -26,6 +31,15 @@ async def test_note_tool_is_not_in_registry():
     )
     assert "note" not in tools
     assert "reason" in tools
+    tool_list = build_meta_tool_list(
+        notes=None,
+        current_url=lambda: "x",
+        question_channel=QuestionChannel(),
+        reason_log=[],
+    )
+    names = {t.name for t in tool_list}
+    assert "note" not in names
+    assert "reason" in names
 
 
 @pytest.mark.asyncio
