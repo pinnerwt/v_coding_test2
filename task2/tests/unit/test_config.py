@@ -50,3 +50,26 @@ def test_restrict_goto_false_when_env_false(monkeypatch):
     monkeypatch.setenv("AGENT_RESTRICT_GOTO", "false")
     cfg = Config.from_env()
     assert cfg.restrict_goto is False
+
+
+def test_config_loads_anti_loop_defaults(monkeypatch):
+    for k in ("SMALL_DIFF_THRESHOLD", "MAX_AUTO_ADVANCE_HOPS", "DIFF_INJECT_MAX_LINES"):
+        monkeypatch.delenv(k, raising=False)
+    from agent.config import Config
+
+    c = Config.from_env()
+    assert c.small_diff_threshold == 500
+    assert c.max_auto_advance_hops == 32
+    assert c.diff_inject_max_lines == 10
+
+
+def test_config_overrides_anti_loop_via_env(monkeypatch):
+    monkeypatch.setenv("SMALL_DIFF_THRESHOLD", "200")
+    monkeypatch.setenv("MAX_AUTO_ADVANCE_HOPS", "8")
+    monkeypatch.setenv("DIFF_INJECT_MAX_LINES", "5")
+    from agent.config import Config
+
+    c = Config.from_env()
+    assert c.small_diff_threshold == 200
+    assert c.max_auto_advance_hops == 8
+    assert c.diff_inject_max_lines == 5
