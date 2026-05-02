@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 
 from agent.browser_session import BrowserSession
@@ -38,13 +39,28 @@ def _is_goto_allowed(url: str, allowlist: list[str]) -> bool:
 _READ_LIMIT = 2000
 
 
-def build_browser_tools(session: BrowserSession) -> dict[str, Any]:
+def build_browser_tools(
+    session: BrowserSession,
+    *,
+    restrict_goto: bool = False,
+    allowlist_sources: Callable[[], list[str]] | None = None,
+) -> dict[str, Any]:
     """Return name->callable map (used in tests).
 
     The full Tool list is in build_browser_tool_list.
     """
 
     async def goto(url: str) -> str:
+        if restrict_goto and allowlist_sources is not None:
+            sources = allowlist_sources()
+            allowlist = []
+            for s in sources:
+                allowlist.extend(_extract_urls(s))
+            if allowlist and not _is_goto_allowed(url, allowlist):
+                return (
+                    f"ERROR: blocked goto to {url} — URL not present in prior "
+                    "observations or goal. Use list_interactive + click to navigate."
+                )
         try:
             await session.page.goto(url, wait_until="networkidle", timeout=10_000)
             return f"navigated to {session.page.url}"
@@ -133,8 +149,15 @@ def build_browser_tools(session: BrowserSession) -> dict[str, Any]:
     }
 
 
-def build_browser_tool_list(session: BrowserSession) -> list[Tool]:
-    fns = build_browser_tools(session)
+def build_browser_tool_list(
+    session: BrowserSession,
+    *,
+    restrict_goto: bool = False,
+    allowlist_sources: Callable[[], list[str]] | None = None,
+) -> list[Tool]:
+    fns = build_browser_tools(
+        session, restrict_goto=restrict_goto, allowlist_sources=allowlist_sources
+    )
     return [
         Tool(
             "goto",

@@ -1,4 +1,8 @@
-from agent.tools.browser import _extract_urls, _is_goto_allowed
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from agent.tools.browser import _extract_urls, _is_goto_allowed, build_browser_tools
 
 
 def test_extract_urls_finds_http_and_https():
@@ -51,3 +55,54 @@ def test_is_goto_allowed_blocked_when_unrelated():
 
 def test_is_goto_allowed_empty_allowlist_blocks():
     assert not _is_goto_allowed("https://x.test", [])
+
+
+def _fake_session(landing_url: str = "https://done.test/"):
+    s = MagicMock()
+    s.page = MagicMock()
+    s.page.url = landing_url
+    s.page.goto = AsyncMock(return_value=None)
+    return s
+
+
+@pytest.mark.asyncio
+async def test_goto_blocked_when_url_not_in_sources():
+    sources = ["https://en.wikipedia.org"]
+    sess = _fake_session()
+    tools = build_browser_tools(sess, restrict_goto=True, allowlist_sources=lambda: sources)
+    obs = await tools["goto"]("https://arxiv.org/abs/1406.2661")
+    assert obs.startswith("ERROR: blocked goto to ")
+    assert "list_interactive" in obs
+    sess.page.goto.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_goto_allowed_when_url_in_sources():
+    sources = ["Goal: Go to https://arxiv.org and find ..."]
+    sess = _fake_session("https://arxiv.org/")
+    tools = build_browser_tools(sess, restrict_goto=True, allowlist_sources=lambda: sources)
+    obs = await tools["goto"]("https://arxiv.org")
+    assert "navigated to" in obs
+    sess.page.goto.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_goto_unrestricted_by_default():
+    sess = _fake_session("https://anything.test/")
+    tools = build_browser_tools(sess)  # restrict_goto defaults to False
+    obs = await tools["goto"]("https://anything.test/")
+    assert "navigated to" in obs
+    sess.page.goto.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_goto_unrestricted_when_sources_callback_returns_no_urls():
+    """Per design: if no URL in any source, restriction is disabled
+    (constraint only applies when there's an anchor)."""
+    sess = _fake_session("https://anywhere.test/")
+    tools = build_browser_tools(
+        sess, restrict_goto=True, allowlist_sources=lambda: ["plain text goal, no urls"]
+    )
+    obs = await tools["goto"]("https://anywhere.test/")
+    assert "navigated to" in obs
+    sess.page.goto.assert_awaited_once()
