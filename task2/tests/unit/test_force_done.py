@@ -154,3 +154,85 @@ async def test_coerce_done_includes_trigger_specific_instruction(trigger, needle
     user_msgs = [m["content"] for m in captured["payload"]["messages"] if m["role"] == "user"]
     combined = "\n".join(user_msgs)
     assert needle in combined
+
+
+@pytest.mark.asyncio
+async def test_coerce_done_appends_read_content_dump():
+    llm, captured = _capturing_llm()
+    tape = [
+        {"action": "goto", "args": {"url": "https://x.test/"}, "obs": "navigated"},
+        {"action": "read", "args": {"offset": 0}, "obs": "first read content"},
+        {"action": "read", "args": {"offset": 1600}, "obs": "second read content"},
+        {"action": "read", "args": {"offset": 3200}, "obs": "third read content"},
+    ]
+    await coerce_done_via_llm(
+        llm=llm,
+        tape=tape,
+        goal="g",
+        qa=[],
+        url="https://x.test/",
+        url_notes="",
+        page_header="URL=https://x.test/",
+        trigger="max_steps",
+        n_no_progress=None,
+        done_tool_schema=_DONE_TOOL_SCHEMA,
+    )
+    user_msgs = [m["content"] for m in captured["payload"]["messages"] if m["role"] == "user"]
+    combined = "\n".join(user_msgs)
+    assert "Read content captured so far (chronological):" in combined
+    assert "read(offset=0)" in combined
+    assert "first read content" in combined
+    assert "read(offset=1600)" in combined
+    assert "second read content" in combined
+    assert "read(offset=3200)" in combined
+    assert "third read content" in combined
+    assert combined.index("first read content") < combined.index("second read content")
+    assert combined.index("second read content") < combined.index("third read content")
+
+
+@pytest.mark.asyncio
+async def test_coerce_done_handles_empty_reads():
+    llm, captured = _capturing_llm()
+    tape = [
+        {"action": "goto", "args": {"url": "https://x.test/"}, "obs": "navigated"},
+        {"action": "list_interactive", "args": {}, "obs": "[]"},
+    ]
+    await coerce_done_via_llm(
+        llm=llm,
+        tape=tape,
+        goal="g",
+        qa=[],
+        url="https://x.test/",
+        url_notes="",
+        page_header="URL=https://x.test/",
+        trigger="max_steps",
+        n_no_progress=None,
+        done_tool_schema=_DONE_TOOL_SCHEMA,
+    )
+    user_msgs = [m["content"] for m in captured["payload"]["messages"] if m["role"] == "user"]
+    combined = "\n".join(user_msgs)
+    assert "(none — no read() calls in tape)" in combined
+
+
+@pytest.mark.asyncio
+async def test_coerce_done_truncates_long_read_obs():
+    llm, captured = _capturing_llm()
+    tape = [
+        {"action": "read", "args": {"offset": 0}, "obs": "X" * 5000},
+    ]
+    await coerce_done_via_llm(
+        llm=llm,
+        tape=tape,
+        goal="g",
+        qa=[],
+        url="https://x.test/",
+        url_notes="",
+        page_header="URL=https://x.test/",
+        trigger="max_steps",
+        n_no_progress=None,
+        done_tool_schema=_DONE_TOOL_SCHEMA,
+    )
+    user_msgs = [m["content"] for m in captured["payload"]["messages"] if m["role"] == "user"]
+    combined = "\n".join(user_msgs)
+    assert "X" * 800 in combined
+    assert "X" * 801 not in combined

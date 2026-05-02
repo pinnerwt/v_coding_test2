@@ -53,6 +53,23 @@ def _instruction(trigger: Trigger, n_no_progress: int | None) -> str:
     return template
 
 
+_READ_TRUNCATE = 800
+
+
+def _read_content_dump(tape: list[dict[str, Any]]) -> str:
+    reads = [s for s in tape if s.get("action") == "read"]
+    if not reads:
+        return "Read content captured so far: (none — no read() calls in tape)"
+    lines = ["Read content captured so far (chronological):"]
+    for s in reads:
+        offset = s.get("args", {}).get("offset", 0)
+        obs = s.get("obs", "") or ""
+        if len(obs) > _READ_TRUNCATE:
+            obs = obs[:_READ_TRUNCATE]
+        lines.append(f'- read(offset={offset}): "{obs}"')
+    return "\n".join(lines)
+
+
 async def coerce_done_via_llm(
     *,
     llm: LLMClient,
@@ -80,6 +97,7 @@ async def coerce_done_via_llm(
         replan_hint=None,
     )
     messages.append({"role": "user", "content": _instruction(trigger, n_no_progress)})
+    messages.append({"role": "user", "content": _read_content_dump(tape)})
     msg, _usage = await llm.chat(
         messages,
         tools=[done_tool_schema],
