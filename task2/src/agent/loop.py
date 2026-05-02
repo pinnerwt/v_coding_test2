@@ -411,17 +411,22 @@ class ReactLoop:
                         }
                     )
                     if self.no_progress_streak >= NO_PROGRESS_GIVEUP:
-                        answer = (
-                            f"stuck: no novel observation for {self.no_progress_streak} "
-                            "consecutive steps"
+                        url2 = self._current_url()
+                        url_notes2 = self.notes.get(url2) if self.notes else ""
+                        result = await coerce_done_via_llm(
+                            llm=self.llm,
+                            tape=self.tape,
+                            goal=goal,
+                            qa=list(self.qa),
+                            url=url2,
+                            url_notes=url_notes2,
+                            page_header=self._page_header(),
+                            trigger="no_progress",
+                            n_no_progress=self.no_progress_streak,
+                            done_tool_schema=self._done_tool_schema(),
                         )
-                        self.trace.write(
-                            {
-                                "type": "done",
-                                "payload": {"status": "failed", "answer": answer},
-                            }
-                        )
-                        return {"status": "failed", "answer": answer}
+                        self.trace.write({"type": "done", "payload": result})
+                        return result
                     continue
                 args = {**args, "offset": plan.served_offset}
                 self.read_cache.record(offset=plan.served_offset, served=plan.served_text)
@@ -504,13 +509,22 @@ class ReactLoop:
             )
 
             if self.no_progress_streak >= NO_PROGRESS_GIVEUP:
-                answer = (
-                    f"stuck: no novel observation for {self.no_progress_streak} consecutive steps"
+                url2 = self._current_url()
+                url_notes2 = self.notes.get(url2) if self.notes else ""
+                result = await coerce_done_via_llm(
+                    llm=self.llm,
+                    tape=self.tape,
+                    goal=goal,
+                    qa=list(self.qa),
+                    url=url2,
+                    url_notes=url_notes2,
+                    page_header=self._page_header(),
+                    trigger="no_progress",
+                    n_no_progress=self.no_progress_streak,
+                    done_tool_schema=self._done_tool_schema(),
                 )
-                self.trace.write(
-                    {"type": "done", "payload": {"status": "failed", "answer": answer}}
-                )
-                return {"status": "failed", "answer": answer}
+                self.trace.write({"type": "done", "payload": result})
+                return result
 
             if name == "goto" and obs_str.startswith("ERROR: blocked goto"):
                 self.trace.write(

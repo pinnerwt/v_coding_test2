@@ -1021,3 +1021,84 @@ async def test_force_done_at_max_steps_replaces_max_steps_fallback(tmp_path):
     assert result == {"status": "success", "answer": "extracted"}
     # The forced call (3rd) must use named tool_choice.
     assert captured_tool_choice[2] == {"type": "function", "function": {"name": "done"}}
+
+
+@pytest.mark.asyncio
+async def test_force_done_on_no_progress_replaces_stuck_message(tmp_path):
+    """When no_progress_streak hits NO_PROGRESS_GIVEUP, the loop must call
+    coerce_done_via_llm with trigger=no_progress and use its return value,
+    not return the legacy "stuck: no novel observation..." string."""
+    browser = _StubBrowser("static body")
+
+    captured_user_messages: list[str] = []
+    call_count = {"n": 0}
+
+    async def handler(request):
+        body = json.loads(request.content.decode())
+        for m in body["messages"]:
+            if m["role"] == "user":
+                captured_user_messages.append(m["content"])
+        call_count["n"] += 1
+        body_user_combined = "\n".join(
+            m["content"] for m in body["messages"] if m["role"] == "user"
+        )
+        if "no novel observation" in body_user_combined:
+            tc_name, tc_args = "done", {"status": "failed", "answer": "no_progress committed"}
+        else:
+            tc_name, tc_args = "read", {"offset": 0}
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": f"c{call_count['n']}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc_name,
+                                        "arguments": json.dumps(tc_args),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    reg.register(_build_read_tool(browser))
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=50,
+    )
+    result = await loop.run("anything")
+    assert result["answer"] == "no_progress committed"
+    assert any("no novel observation" in m for m in captured_user_messages)

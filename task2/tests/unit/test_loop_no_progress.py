@@ -73,6 +73,11 @@ async def test_replan_hint_fires_on_alternating_actions_with_stale_obs(tmp_path)
     reg.register(Tool("noopA", "x", {"type": "object", "properties": {}}, noopA))
     reg.register(Tool("noopB", "x", {"type": "object", "properties": {}}, noopB))
 
+    async def _done(status: str = "failed", answer: str = ""):
+        return ""
+
+    reg.register(Tool("done", "done", {"type": "object", "properties": {}}, _done))
+
     qc = QuestionChannel()
     trace = TraceWriter(tmp_path / "t.jsonl")
     loop = ReactLoop(
@@ -138,6 +143,11 @@ async def test_no_progress_streak_forces_done_failed(tmp_path):
     reg.register(Tool("noopA", "x", {"type": "object", "properties": {}}, noopA))
     reg.register(Tool("noopB", "x", {"type": "object", "properties": {}}, noopB))
 
+    async def _done(status: str = "failed", answer: str = ""):
+        return ""
+
+    reg.register(Tool("done", "done", {"type": "object", "properties": {}}, _done))
+
     qc = QuestionChannel()
     trace = TraceWriter(tmp_path / "t.jsonl")
     loop = ReactLoop(
@@ -156,7 +166,6 @@ async def test_no_progress_streak_forces_done_failed(tmp_path):
     # and one warm-up step, expect ≤16 LLM calls (some slack for the
     # interplay with the existing hint state machine).
     assert call_n["i"] <= 16, (
-        f"loop called LLM {call_n['i']} times before giving up — streak "
-        "force-done did not fire"
+        f"loop called LLM {call_n['i']} times before giving up — streak force-done did not fire"
     )
     assert "stuck" in result["answer"].lower(), result["answer"]
