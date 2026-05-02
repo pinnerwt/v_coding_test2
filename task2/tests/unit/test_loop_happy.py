@@ -55,9 +55,7 @@ async def test_loop_runs_done(tmp_path):
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()
-    meta = build_meta_tools(
-        notes=None, current_url=lambda: "https://a.test/", question_channel=qc
-    )
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://a.test/", question_channel=qc)
     reg.register(
         Tool(
             "done",

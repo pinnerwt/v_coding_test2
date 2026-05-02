@@ -25,9 +25,7 @@ CANNED = [
 
 
 def _scripted_llm(url):
-    canned = [
-        (n, {**a, "url": url} if n == "goto" else a) for n, a in CANNED
-    ]
+    canned = [(n, {**a, "url": url} if n == "goto" else a) for n, a in CANNED]
     it = iter(canned)
 
     async def handler(request):
@@ -63,9 +61,7 @@ def _scripted_llm(url):
 async def test_simple_search_eval(tmp_path, monkeypatch, http_fixture_server):
     url = http_fixture_server("simple/index.html")
     monkeypatch.setenv("MAX_STEPS", "10")
-    app = build_app(
-        cfg=Config.from_env(), data_dir=tmp_path, llm_transport=_scripted_llm(url)
-    )
+    app = build_app(cfg=Config.from_env(), data_dir=tmp_path, llm_transport=_scripted_llm(url))
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         r = await ac.post("/api/run_sync", json={"goal": "search for hello"})

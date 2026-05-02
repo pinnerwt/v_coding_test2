@@ -26,9 +26,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
     app = FastAPI()
     here = Path(__file__).parent
     templates = Jinja2Templates(directory=str(here / "templates"))
-    app.mount(
-        "/static", StaticFiles(directory=str(here / "static")), name="static"
-    )
+    app.mount("/static", StaticFiles(directory=str(here / "static")), name="static")
     sem = asyncio.Semaphore(1)
     notes = NotesStore(data_dir / "url_notes.db", query_strip=cfg.url_note_query_strip)
 
@@ -75,9 +73,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                         await asyncio.sleep(0.05)
                         q = qc.pending()
                         if q:
-                            await send_event(
-                                {"type": "question", "payload": {"question": q}}
-                            )
+                            await send_event({"type": "question", "payload": {"question": q}})
                             ans = await ask_user()
                             qc.answer(ans)
 
@@ -124,9 +120,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
     @app.get("/replay/{sid}", response_class=HTMLResponse)
     async def replay_one(request: Request, sid: str):
         traces_dir = data_dir / "traces"
-        sessions = sorted(
-            [p.stem for p in traces_dir.glob("*.jsonl")], reverse=True
-        )
+        sessions = sorted([p.stem for p in traces_dir.glob("*.jsonl")], reverse=True)
         events = read_trace(traces_dir / f"{sid}.jsonl")
         return templates.TemplateResponse(
             "replay.html",
@@ -162,9 +156,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
             async def ask_user():
                 return await answer_q.get()
 
-            run_task = asyncio.create_task(
-                run_loop(first["goal"], send_event, ask_user)
-            )
+            run_task = asyncio.create_task(run_loop(first["goal"], send_event, ask_user))
             while not run_task.done():
                 try:
                     msg = await asyncio.wait_for(ws.receive_json(), timeout=0.1)

@@ -21,9 +21,7 @@ async def test_appends_bullets(tmp_path):
     llm = LLMClient(
         base_url="http://t/v1",
         model="m",
-        transport=_mock(
-            "- found search at id 12\n- login button hidden behind cookie banner"
-        ),
+        transport=_mock("- found search at id 12\n- login button hidden behind cookie banner"),
     )
     notes = NotesStore(tmp_path / "n.db")
     s = Summarizer(llm, notes)

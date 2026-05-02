@@ -64,9 +64,7 @@ def build_meta_tool_list(
     current_url: Callable[[], str],
     question_channel: QuestionChannel,
 ) -> list[Tool]:
-    fns = build_meta_tools(
-        notes=notes, current_url=current_url, question_channel=question_channel
-    )
+    fns = build_meta_tools(notes=notes, current_url=current_url, question_channel=question_channel)
     return [
         Tool(
             "note",

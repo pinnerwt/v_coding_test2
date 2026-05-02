@@ -2,10 +2,7 @@ from agent.context import build_messages
 
 
 def test_ordering_and_compression():
-    tape = [
-        {"thought": f"t{i}", "action": "read", "args": {}, "obs": f"o{i}"}
-        for i in range(12)
-    ]
+    tape = [{"thought": f"t{i}", "action": "read", "args": {}, "obs": f"o{i}"} for i in range(12)]
     msgs = build_messages(
         system="SYS",
         goal="buy soap",

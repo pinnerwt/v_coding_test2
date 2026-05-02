@@ -71,11 +71,7 @@ class ReactLoop:
     def _last_three_match(self) -> bool:
         if len(self.tape) < 3:
             return False
-        return (
-            _step_key(self.tape[-1])
-            == _step_key(self.tape[-2])
-            == _step_key(self.tape[-3])
-        )
+        return _step_key(self.tape[-1]) == _step_key(self.tape[-2]) == _step_key(self.tape[-3])
 
     def _last_action_args(self) -> tuple | None:
         if not self.tape:
@@ -99,14 +95,10 @@ class ReactLoop:
                 page_header=self._page_header(),
                 replan_hint=replan_hint,
             )
-            msg = await self.llm.chat(
-                messages, tools=tools, tool_choice="auto", reasoning=False
-            )
+            msg = await self.llm.chat(messages, tools=tools, tool_choice="auto", reasoning=False)
             tool_calls = msg.get("tool_calls") or []
             if not tool_calls:
-                self.trace.write(
-                    {"type": "error", "payload": {"reason": "no tool call"}}
-                )
+                self.trace.write({"type": "error", "payload": {"reason": "no tool call"}})
                 return {"status": "failed", "answer": "agent produced no tool call"}
             tc = tool_calls[0]
             name = tc["function"]["name"]
@@ -150,11 +142,7 @@ class ReactLoop:
                         },
                     }
                 )
-                if (
-                    d.status == "failed"
-                    and self.summarizer is not None
-                    and url
-                ):
+                if d.status == "failed" and self.summarizer is not None and url:
                     existing = self.notes.get(url) if self.notes else ""
                     await self.summarizer.maybe_summarize(
                         trigger="failed",
@@ -173,9 +161,7 @@ class ReactLoop:
                 obs = f"ERROR: {e}"
 
             obs_str = obs if isinstance(obs, str) else json.dumps(obs)
-            self.tape.append(
-                {"thought": thought, "action": name, "args": args, "obs": obs_str}
-            )
+            self.tape.append({"thought": thought, "action": name, "args": args, "obs": obs_str})
             self.trace.write(
                 {
                     "type": "step",
@@ -207,7 +193,5 @@ class ReactLoop:
             if state == "none" and self._last_three_match():
                 state = "hinted"
 
-        self.trace.write(
-            {"type": "done", "payload": {"status": "failed", "answer": "max steps"}}
-        )
+        self.trace.write({"type": "done", "payload": {"status": "failed", "answer": "max steps"}})
         return {"status": "failed", "answer": "max steps"}
