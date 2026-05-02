@@ -4,5 +4,7 @@ I also want to add monitors (token usages, server up/down, llm server up/down) a
 
 Can you look into this case: Go to https://arxiv.org and Find the year when the paper 'Generative Adversarial Networks' by Goodfellow et al. was submitted to arXiv. , in read({}), there is no the url returned that we use goto({xxx}) in the next step.
 
-1. Justified the chat UI (right aligned, no need to scroll, left aligned and don't leave a blank if the column is not collapsed.) 2. Sort the sessions by time (most
-  recent at the top). 3. Check latest sessions and verify that their trace is optimized/not hallucinating.
+1. Justified the chat UI (right aligned, no need to scroll, left aligned and don't leave a blank if the column is not collapsed.) 2. Sort the sessions by time (most recent at the top). 3. Check latest sessions and verify that their trace is optimized/not hallucinating.
+
+/superpowers:brainstorming I want to create a skill that iterate through 1. Run the benchmarks on last failed cases 2. Read the results. Analyze the results while focusing on - process errors (loop, wrong results returned), - hallucinations (do something that is not based on the observations). 3. Write them into observations.md along with the severity. What am I missing here?
+1. One pass first. 2. last failed cases = only the most recent bench-run's failures. 3. Claude read the whole process and determine it. 4. replaced each pass. 5. Run only one of the failed cases. Only move on when current case is fixed or if I say so. 6. P0: wrong results. P1: latency/performance improvement P2: nice to have features. 7. Just produce findings. We will discuss them later. 8. in project.
