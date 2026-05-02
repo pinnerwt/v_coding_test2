@@ -150,6 +150,18 @@ class ReactLoop:
                         },
                     }
                 )
+                if (
+                    d.status == "failed"
+                    and self.summarizer is not None
+                    and url
+                ):
+                    existing = self.notes.get(url) if self.notes else ""
+                    await self.summarizer.maybe_summarize(
+                        trigger="failed",
+                        prior_url=url,
+                        tape_slice=self.tape[-5:],
+                        existing_notes=existing,
+                    )
                 self.trace.write(
                     {
                         "type": "done",
@@ -176,6 +188,21 @@ class ReactLoop:
                     },
                 }
             )
+
+            if self.summarizer is not None:
+                trigger = None
+                if name == "goto":
+                    trigger = "goto"
+                elif obs_str.startswith("ERROR:"):
+                    trigger = "error"
+                if trigger is not None and url:
+                    existing = self.notes.get(url) if self.notes else ""
+                    await self.summarizer.maybe_summarize(
+                        trigger=trigger,
+                        prior_url=url,
+                        tape_slice=self.tape[-5:],
+                        existing_notes=existing,
+                    )
 
             if state == "none" and self._last_three_match():
                 state = "hinted"
