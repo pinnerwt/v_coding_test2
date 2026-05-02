@@ -27,12 +27,12 @@ class Config:
         deepseek_key = os.getenv("DEEPSEEK_API_KEY")
         return cls(
             agent_model_base_url=os.getenv("AGENT_MODEL_BASE_URL", "https://api.deepseek.com"),
-            agent_model_name=os.getenv("AGENT_MODEL_NAME", "deepseek-v4-flash"),
+            agent_model_name=os.getenv("AGENT_MODEL_NAME", "deepseek-chat"),
             agent_api_key=deepseek_key,
             summarizer_model_base_url=os.getenv(
                 "SUMMARIZER_MODEL_BASE_URL", "https://api.deepseek.com"
             ),
-            summarizer_model_name=os.getenv("SUMMARIZER_MODEL_NAME", "deepseek-v4-flash"),
+            summarizer_model_name=os.getenv("SUMMARIZER_MODEL_NAME", "deepseek-chat"),
             summarizer_api_key=deepseek_key,
             max_steps=int(os.getenv("MAX_STEPS", "50")),
             url_note_query_strip=_bool(os.getenv("URL_NOTE_QUERY_STRIP"), True),

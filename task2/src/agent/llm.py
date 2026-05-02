@@ -44,7 +44,12 @@ class LLMClient:
         r = await self._client.post(
             f"{self._base_url}/chat/completions", json=payload, headers=headers
         )
-        r.raise_for_status()
+        if r.status_code >= 400:
+            msg = (
+                f"Client error '{r.status_code} {r.reason_phrase}' for url "
+                f"'{r.request.url}' (model={self._model}): {r.text}"
+            )
+            raise httpx.HTTPStatusError(msg, request=r.request, response=r)
         data = r.json()
         return data["choices"][0]["message"], data.get("usage")
 

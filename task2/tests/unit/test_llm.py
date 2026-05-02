@@ -76,6 +76,29 @@ async def test_no_api_key_means_no_authorization_header():
 
 
 @pytest.mark.asyncio
+async def test_http_error_surfaces_response_body():
+    import httpx
+
+    body_text = (
+        '{"error":{"message":"Messages with role tool must respond to tool_calls",'
+        '"code":"invalid_request_error"}}'
+    )
+
+    async def handler(request):
+        return httpx.Response(400, text=body_text)
+
+    client = LLMClient(
+        base_url="http://test/v1",
+        model="m",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        await client.chat([{"role": "user", "content": "hi"}])
+    assert "400" in str(exc_info.value)
+    assert "Messages with role tool" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
 async def test_tools_passed_through():
     import httpx
 

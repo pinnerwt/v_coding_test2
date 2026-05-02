@@ -14,9 +14,9 @@ def test_defaults(monkeypatch):
         monkeypatch.delenv(k, raising=False)
     cfg = Config.from_env()
     assert cfg.agent_model_base_url == "https://api.deepseek.com"
-    assert cfg.agent_model_name == "deepseek-v4-flash"
+    assert cfg.agent_model_name == "deepseek-chat"
     assert cfg.summarizer_model_base_url == "https://api.deepseek.com"
-    assert cfg.summarizer_model_name == "deepseek-v4-flash"
+    assert cfg.summarizer_model_name == "deepseek-chat"
     assert cfg.max_steps == 50
     assert cfg.url_note_query_strip is True
     assert cfg.agent_api_key is None
