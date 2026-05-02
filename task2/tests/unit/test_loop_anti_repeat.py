@@ -422,3 +422,77 @@ async def test_press_key_hidden_when_no_global_diff(tmp_path):
     # its previous call produced zero global diff.
     assert "press_key" in captured_tools[0]
     assert "press_key" not in captured_tools[1]
+
+
+@pytest.mark.asyncio
+async def test_list_interactive_auto_advances(tmp_path):
+    """list_interactive at the same offset twice on an unchanged page should
+    auto-advance just like read."""
+    # Snapshot is a JSON list. We approximate by returning fixed strings.
+    pages = ["snap-A", "snap-B", "snap-C"]
+    # Each "offset" maps to a different page in our stub.
+
+    async def list_interactive(offset: int = 0, limit: int = 50, thought: str = ""):
+        idx = offset // limit
+        if idx >= len(pages):
+            return ""
+        return pages[idx]
+
+    text = "irrelevant"
+    browser = _StubBrowser(text)
+    transport = _mock_llm_calls(
+        [
+            ("list_interactive", {"offset": 0, "limit": 1, "thought": "first"}),
+            ("list_interactive", {"offset": 0, "limit": 1, "thought": "second"}),
+            ("done", {"status": "success", "answer": "ok"}),
+        ]
+    )
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    reg.register(
+        Tool(
+            "list_interactive",
+            "li",
+            {
+                "type": "object",
+                "properties": {
+                    "offset": {"type": "integer"},
+                    "limit": {"type": "integer"},
+                    "thought": {"type": "string"},
+                },
+            },
+            list_interactive,
+        )
+    )
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=5,
+    )
+    await loop.run("anything")
+
+    # Step 1 should have been auto-advanced.
+    step1 = loop.tape[1]
+    assert step1["action"] == "list_interactive"
+    assert step1["obs"].startswith("[auto-advanced 0→1")  # advanced by `limit` of 1
+    assert "snap-B" in step1["obs"]
