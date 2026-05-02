@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from agent.context import NOVELTY_WINDOW, _obs_fingerprint, build_messages
+from agent.force_done import coerce_done_via_llm
 from agent.llm import LLMClient
 from agent.page_diff import (
     GlobalTextCache,
@@ -139,6 +140,12 @@ class ReactLoop:
     def _page_header(self) -> str:
         return f"URL={self._current_url()}"
 
+    def _done_tool_schema(self) -> dict[str, Any]:
+        for t in self.registry.to_openai_tools():
+            if t["function"]["name"] == "done":
+                return t
+        raise RuntimeError("done tool not registered")
+
     def _last_three_match(self) -> bool:
         if len(self.tape) < 3:
             return False
@@ -164,6 +171,23 @@ class ReactLoop:
     async def run(self, goal: str) -> dict:
         state = "none"  # none | hinted | asked | giveup
         for step_idx in range(self.max_steps):
+            if step_idx == self.max_steps - 1:
+                url = self._current_url()
+                url_notes = self.notes.get(url) if self.notes else ""
+                result = await coerce_done_via_llm(
+                    llm=self.llm,
+                    tape=self.tape,
+                    goal=goal,
+                    qa=list(self.qa),
+                    url=url,
+                    url_notes=url_notes,
+                    page_header=self._page_header(),
+                    trigger="max_steps",
+                    n_no_progress=None,
+                    done_tool_schema=self._done_tool_schema(),
+                )
+                self.trace.write({"type": "done", "payload": result})
+                return result
             try:
                 current_text = await self.browser.page.evaluate("document.body.innerText")
             except Exception:
@@ -217,13 +241,7 @@ class ReactLoop:
                     f'{self._wall_kind.value}") instead of retrying navigation.]'
                 )
 
-            is_final_step = step_idx == self.max_steps - 1
-            if is_final_step:
-                tools = self.registry.to_openai_tools_filtered(
-                    exclude={n for n in self.registry.names() if n != "done"}
-                )
-            else:
-                tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
+            tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
             url = self._current_url()
             url_notes = self.notes.get(url) if self.notes else ""
             replan_hint = _REPLAN_HINT if state == "hinted" else None
@@ -530,5 +548,4 @@ class ReactLoop:
             if state == "none" and (self._last_three_match() or self._no_progress()):
                 state = "hinted"
 
-        self.trace.write({"type": "done", "payload": {"status": "failed", "answer": "max steps"}})
-        return {"status": "failed", "answer": "max steps"}
+        raise RuntimeError("ReactLoop: unreachable — max_steps short-circuit must return")

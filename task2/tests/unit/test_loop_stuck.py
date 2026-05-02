@@ -56,6 +56,11 @@ async def test_replan_hint_after_3_repeats(tmp_path):
         return "same"
 
     reg.register(Tool("noop", "x", {"type": "object", "properties": {}}, noop))
+
+    async def _done(status: str = "failed", answer: str = ""):
+        return ""
+
+    reg.register(Tool("done", "done", {"type": "object", "properties": {}}, _done))
     qc = QuestionChannel()
     trace = TraceWriter(tmp_path / "t.jsonl")
     loop = ReactLoop(

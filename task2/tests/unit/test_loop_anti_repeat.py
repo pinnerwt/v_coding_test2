@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 import httpx
 import pytest
@@ -940,3 +941,83 @@ async def test_list_interactive_empty_treated_as_exhausted_on_arrival(tmp_path):
     assert loop.tape[0]["obs"].startswith("(end of interactive list")
     # Turn 1 (the next LLM call) MUST NOT have list_interactive in tools.
     assert "list_interactive" not in captured_tools[1]
+
+
+@pytest.mark.asyncio
+async def test_force_done_at_max_steps_replaces_max_steps_fallback(tmp_path):
+    """At step_idx == max_steps - 1, the loop must call coerce_done_via_llm
+    and use its return value, not fall through to the "max steps" placeholder."""
+    text = "A" * 1600
+    browser = _StubBrowser(text)
+
+    captured_tool_choice: list[Any] = []
+    call_count = {"n": 0}
+
+    async def handler(request):
+        body = json.loads(request.content.decode())
+        captured_tool_choice.append(body.get("tool_choice"))
+        call_count["n"] += 1
+        # max_steps=3 → step_idx 0, 1; final step is the forced-done call (3rd).
+        if call_count["n"] in (1, 2):
+            tc_name, tc_args = "read", {"offset": 0}
+        else:
+            tc_name, tc_args = "done", {"status": "success", "answer": "extracted"}
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": f"c{call_count['n']}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc_name,
+                                        "arguments": json.dumps(tc_args),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    reg.register(_build_read_tool(browser))
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=3,
+    )
+    result = await loop.run("anything")
+
+    # The final result must come from the forced-done LLM call, not the placeholder.
+    assert result == {"status": "success", "answer": "extracted"}
+    # The forced call (3rd) must use named tool_choice.
+    assert captured_tool_choice[2] == {"type": "function", "function": {"name": "done"}}

@@ -51,6 +51,11 @@ async def test_summarizer_called_on_error(tmp_path):
         return "ERROR: kaboom"
 
     reg.register(Tool("fail_tool", "x", {"type": "object", "properties": {}}, fail_tool))
+
+    async def _done(status: str = "failed", answer: str = ""):
+        return ""
+
+    reg.register(Tool("done", "done", {"type": "object", "properties": {}}, _done))
     qc = QuestionChannel()
     notes = NotesStore(tmp_path / "n.db")
     summarizer = AsyncMock()
