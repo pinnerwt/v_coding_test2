@@ -36,7 +36,7 @@ def _is_goto_allowed(url: str, allowlist: list[str]) -> bool:
     return False
 
 
-_READ_LIMIT = 2000
+_READ_LIMIT = 1600
 
 
 def build_browser_tools(
@@ -193,7 +193,7 @@ def build_browser_tool_list(
         ),
         Tool(
             "read",
-            "Read up to 2000 chars of visible page text from offset.",
+            "Read up to 1600 chars of visible page text from offset.",
             {
                 "type": "object",
                 "properties": {
