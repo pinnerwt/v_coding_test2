@@ -28,3 +28,15 @@ def test_env_overrides(monkeypatch):
     assert cfg.agent_model_base_url == "https://example.test/v1"
     assert cfg.max_steps == 10
     assert cfg.url_note_query_strip is False
+
+
+def test_restrict_goto_defaults_true(monkeypatch):
+    monkeypatch.delenv("AGENT_RESTRICT_GOTO", raising=False)
+    cfg = Config.from_env()
+    assert cfg.restrict_goto is True
+
+
+def test_restrict_goto_false_when_env_false(monkeypatch):
+    monkeypatch.setenv("AGENT_RESTRICT_GOTO", "false")
+    cfg = Config.from_env()
+    assert cfg.restrict_goto is False
