@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Web Agent</title>
+<script src="/static/app.js" defer></script>
+<style>
+body{font-family:system-ui;margin:2rem;max-width:900px}
+.card{border:1px solid #ccc;border-radius:6px;padding:.6rem;margin:.4rem 0}
+.thought{color:#666;font-style:italic}
+.action{font-family:monospace}
+.obs{white-space:pre-wrap;font-family:monospace;background:#f7f7f7;padding:.4rem}
+#qa{display:none;margin:1rem 0;padding:1rem;border:2px solid #f80;border-radius:6px}
+</style></head>
+<body>
+<h1>Web Agent</h1>
+<form id=goal-form>
+  <textarea id=goal rows=3 cols=80 placeholder="Goal..."></textarea><br>
+  <button type=submit>Run</button>
+  <a href="/replay" style="margin-left:1rem">Replay past sessions →</a>
+</form>
+<div id=qa>
+  <div id=qa-question></div>
+  <input id=qa-answer><button id=qa-send>Send</button>
+</div>
+<div id=trace></div>
+<div id=result></div>
+</body></html>
