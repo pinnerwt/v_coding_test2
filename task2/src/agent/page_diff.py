@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 from dataclasses import dataclass
 
 
@@ -75,3 +76,38 @@ def plan_read(
                 exhausted=True,
             )
         offset += read_limit
+
+
+class GlobalTextCache:
+    """Stores the most recent `document.body.innerText` for global-diff
+    comparisons across turns."""
+
+    def __init__(self) -> None:
+        self._prev: str | None = None
+
+    def previous(self) -> str | None:
+        return self._prev
+
+    def update(self, current: str) -> None:
+        self._prev = current
+
+
+def format_small_diff(*, previous: str, current: str, max_lines: int) -> str:
+    if previous == current:
+        return ""
+    prev_lines = previous.splitlines(keepends=False)
+    curr_lines = current.splitlines(keepends=False)
+    body: list[str] = []
+    for line in difflib.unified_diff(prev_lines, curr_lines, lineterm="", n=0):
+        if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
+            continue
+        if line.startswith("+"):
+            body.append("  + " + line[1:])
+        elif line.startswith("-"):
+            body.append("  - " + line[1:])
+        if len(body) >= max_lines:
+            break
+    added = sum(1 for ln in body if ln.startswith("  + "))
+    removed = sum(1 for ln in body if ln.startswith("  - "))
+    header = f"Page changes since last turn (+{added} / -{removed} lines):"
+    return "\n".join([header, *body])
