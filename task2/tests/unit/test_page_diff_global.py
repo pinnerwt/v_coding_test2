@@ -29,8 +29,8 @@ def test_format_small_diff_caps_at_max_lines():
     prev = "\n".join(f"old {i}" for i in range(50))
     curr = "\n".join(f"new {i}" for i in range(50))
     out = format_small_diff(previous=prev, current=curr, max_lines=4)
-    body_lines = [ln for ln in out.splitlines() if ln.startswith(("+ ", "- "))]
-    assert len(body_lines) <= 4
+    body_lines = [ln for ln in out.splitlines() if ln.startswith(("  + ", "  - "))]
+    assert 1 <= len(body_lines) <= 4
 
 
 def test_format_small_diff_returns_empty_when_no_change():

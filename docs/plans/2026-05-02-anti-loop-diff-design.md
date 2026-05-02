@@ -68,7 +68,7 @@ Any non-`read` / non-`list_interactive` action that produces non-empty `global_d
 When `global_diff` is non-empty and `len(diff) <= SMALL_DIFF_THRESHOLD` (default **500 chars**, total of added + removed), inject a one-block summary into the next turn's `page_header` section in `context.py`:
 
 ```
-Page changes since last turn (+12 / -3 chars):
+Page changes since last turn (+12 / -3 lines):
   + "Sort: Params ↓"
   - "Sort: Score"
 ```
