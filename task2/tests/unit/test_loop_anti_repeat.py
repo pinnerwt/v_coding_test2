@@ -189,3 +189,123 @@ async def test_read_hidden_after_end_of_page_until_mutation(tmp_path):
 
     # Third turn (index 2) should not have `read` in tools.
     assert "read" not in captured_tools[2]
+
+
+@pytest.mark.asyncio
+async def test_small_diff_injected_after_state_change(tmp_path):
+    text_v1 = "Sort: Score\nlist of items\n"
+    text_v2 = "Sort: Params\nlist of items\n"
+    browser = _StubBrowser(text_v1)
+
+    captured_user_prompts: list[str] = []
+
+    async def handler(request):
+        body = json.loads(request.content.decode())
+        for m in body["messages"]:
+            if m["role"] == "user":
+                captured_user_prompts.append(m["content"])
+        # Scripted: click then done. After click, switch the page text.
+        idx = len(captured_user_prompts) - 1
+        if idx == 0:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "c1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "click",
+                                            "arguments": json.dumps({"id": 1}),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                },
+            )
+        elif idx == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "c1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "done",
+                                            "arguments": json.dumps(
+                                                {"status": "success", "answer": "ok"}
+                                            ),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(500)
+
+    transport = httpx.MockTransport(handler)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+
+    async def click(id: int, thought: str = ""):
+        browser.set_text(text_v2)  # mutate page
+        return f"clicked id={id}"
+
+    reg.register(
+        Tool(
+            "click",
+            "click",
+            {
+                "type": "object",
+                "properties": {"id": {"type": "integer"}, "thought": {"type": "string"}},
+                "required": ["id"],
+            },
+            click,
+        )
+    )
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=5,
+    )
+    await loop.run("anything")
+
+    # The second user prompt (turn index 1) should include the small diff.
+    second_prompt = captured_user_prompts[1]
+    assert "Page changes since last turn" in second_prompt
+    assert "Sort: Params" in second_prompt

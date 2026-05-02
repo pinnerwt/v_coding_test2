@@ -5,7 +5,13 @@ from typing import Any
 
 from agent.context import NOVELTY_WINDOW, _obs_fingerprint, build_messages
 from agent.llm import LLMClient
-from agent.page_diff import OffsetCache, plan_read
+from agent.page_diff import (
+    GlobalTextCache,
+    OffsetCache,
+    format_small_diff,
+    plan_read,
+    should_inject_diff,
+)
 from agent.tools.meta import LoopDone, QuestionChannel
 from agent.tools.registry import ToolRegistry
 from agent.trace import TraceWriter
@@ -105,6 +111,9 @@ class ReactLoop:
         self._read_limit = 1600
         self._max_auto_advance_hops = 32
         self._hidden_tools: set[str] = set()
+        self.global_cache = GlobalTextCache()
+        self._small_diff_threshold = 500
+        self._diff_inject_max_lines = 10
 
     def _current_url(self) -> str:
         try:
@@ -140,6 +149,31 @@ class ReactLoop:
     async def run(self, goal: str) -> dict:
         state = "none"  # none | hinted | asked | giveup
         for step_idx in range(self.max_steps):
+            try:
+                current_text = await self.browser.page.evaluate("document.body.innerText")
+            except Exception:
+                current_text = ""
+
+            prev_text = self.global_cache.previous()
+            diff_block: str | None = None
+            if prev_text is not None:
+                if should_inject_diff(
+                    previous=prev_text,
+                    current=current_text,
+                    threshold=self._small_diff_threshold,
+                ):
+                    diff_block = format_small_diff(
+                        previous=prev_text,
+                        current=current_text,
+                        max_lines=self._diff_inject_max_lines,
+                    )
+                if prev_text != current_text:
+                    # Page mutated → invalidate offset caches and re-expose hidden tools.
+                    self.read_cache.clear()
+                    self.list_interactive_cache.clear()
+                    self._hidden_tools.clear()
+            self.global_cache.update(current_text)
+
             tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
             url = self._current_url()
             url_notes = self.notes.get(url) if self.notes else ""
@@ -152,6 +186,7 @@ class ReactLoop:
                 tape=self.tape,
                 page_header=self._page_header(),
                 replan_hint=replan_hint,
+                page_diff=diff_block,
             )
             if self.send_transient is not None:
                 await self.send_transient({"type": "llm_call_start"})
