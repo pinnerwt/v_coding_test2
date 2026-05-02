@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections import Counter
 from typing import Any
 
 from playwright.async_api import (
@@ -71,29 +72,31 @@ class BrowserSession:
         flat: list[dict[str, Any]] = []
         self._element_map.clear()
         next_id = 0
+        counts: Counter[tuple[str, str]] = Counter()
 
         for node in res.get("nodes", []):
             role = (node.get("role") or {}).get("value", "") or ""
             name = (node.get("name") or {}).get("value", "") or ""
             value_obj = node.get("value")
-            properties = node.get("properties") or []
-            focusable = any(
-                p.get("name") == "focusable" and p.get("value", {}).get("value") for p in properties
-            )
-            if role in _INTERACTIVE_ROLES or focusable:
+            if role in _INTERACTIVE_ROLES:
                 eid = next_id
                 next_id += 1
                 entry: dict[str, Any] = {"id": eid, "role": role, "name": name}
                 if value_obj is not None:
                     entry["value"] = value_obj.get("value")
                 flat.append(entry)
-                # Best-effort locator: by role+name where possible, else by role only.
+                # Disambiguate duplicate (role, name) pairs with .nth(k) so strict mode
+                # doesn't choke when multiple elements share the same accessible name.
+                key = (role, name)
+                k = counts[key]
+                counts[key] += 1
                 with contextlib.suppress(Exception):
-                    self._element_map[eid] = (
+                    base = (
                         self.page.get_by_role(role, name=name)
                         if name
                         else self.page.get_by_role(role)
                     )
+                    self._element_map[eid] = base.nth(k)
 
         return flat[offset : offset + limit]
 
