@@ -191,12 +191,19 @@ class ReactLoop:
                     trigger = "error"
                 if trigger is not None and url:
                     existing = self.notes.get(url) if self.notes else ""
-                    await self.summarizer.maybe_summarize(
-                        trigger=trigger,
-                        prior_url=url,
-                        tape_slice=self.tape[-5:],
-                        existing_notes=existing,
-                    )
+                    try:
+                        await self.summarizer.maybe_summarize(
+                            trigger=trigger,
+                            prior_url=url,
+                            tape_slice=self.tape[-5:],
+                            existing_notes=existing,
+                        )
+                    except Exception as e:
+                        # Summarizer is best-effort URL-note generation; a transient
+                        # LLM timeout or network blip must not abort the agent loop.
+                        self.trace.write(
+                            {"type": "summarizer_error", "payload": {"error": str(e)[:200]}}
+                        )
 
             if state == "none" and self._last_three_match():
                 state = "hinted"
