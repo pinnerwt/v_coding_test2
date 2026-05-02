@@ -98,7 +98,7 @@ async def distill_page_knowledge(
   existing 2 KB FIFO trim catches oversize output as a safety net.
 - **Failure isolation**: any exception (HTTP error, `ToolNameNotAllowed`,
   JSON shape problems) is caught. Emit a trace event
-  `{"type": "distill_failed", "payload": {"reason": str(e)}}` and leave
+  `{"type": "distill_failed", "payload": {"error": str(e)}}` and leave
   the prior note untouched. The user-visible `result` is unaffected.
 
 ### Tests

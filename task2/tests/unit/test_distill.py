@@ -102,6 +102,9 @@ async def test_distill_failure_emits_trace_event_and_leaves_row(tmp_path):
     )
     assert notes.get("https://a.test/") == "prior-row-content"
     assert any(e["type"] == "distill_failed" for e in trace.events)
+    ev = next(e for e in trace.events if e["type"] == "distill_failed")
+    assert isinstance(ev["payload"]["error"], str)
+    assert ev["payload"]["error"]  # non-empty
 
 
 @pytest.mark.asyncio
