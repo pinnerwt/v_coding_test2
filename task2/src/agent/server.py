@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -170,6 +170,13 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                     status = ev["payload"].get("status", status)
             out.append({"sid": sid, "goal": goal, "started_at": started_at, "status": status})
         return out
+
+    @app.get("/api/trace/{sid}")
+    async def get_trace(sid: str):
+        p = data_dir / "traces" / f"{sid}.jsonl"
+        if not p.exists():
+            raise HTTPException(status_code=404, detail="not found")
+        return read_trace(p)
 
     @app.post("/api/run_sync")
     async def run_sync(payload: dict):
