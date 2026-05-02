@@ -1,5 +1,6 @@
 import json
 
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -85,3 +86,32 @@ async def test_trace_404_for_missing(tmp_path):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
         r = await ac.get("/api/trace/nope")
         assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_llm_health_up(tmp_path):
+    async def handler(request):
+        assert request.url.path.endswith("/models")
+        return httpx.Response(200, json={"data": [{"id": "qwen3.5-27b"}]})
+
+    transport = httpx.MockTransport(handler)
+    app = build_app(cfg=Config.from_env(), data_dir=tmp_path, llm_transport=transport)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+        r = await ac.get("/api/llm_health")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["llm"] == "up"
+        assert isinstance(body["latency_ms"], int)
+
+
+@pytest.mark.asyncio
+async def test_llm_health_down(tmp_path):
+    async def handler(request):
+        raise httpx.ConnectError("refused")
+
+    transport = httpx.MockTransport(handler)
+    app = build_app(cfg=Config.from_env(), data_dir=tmp_path, llm_transport=transport)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+        r = await ac.get("/api/llm_health")
+        assert r.status_code == 200
+        assert r.json()["llm"] == "down"

@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -170,6 +172,18 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                     status = ev["payload"].get("status", status)
             out.append({"sid": sid, "goal": goal, "started_at": started_at, "status": status})
         return out
+
+    @app.get("/api/llm_health")
+    async def llm_health():
+        url = cfg.agent_model_base_url.rstrip("/") + "/models"
+        t0 = time.perf_counter()
+        try:
+            async with httpx.AsyncClient(timeout=2.0, transport=llm_transport) as c:
+                r = await c.get(url)
+                r.raise_for_status()
+            return {"llm": "up", "latency_ms": int((time.perf_counter() - t0) * 1000)}
+        except Exception:
+            return {"llm": "down", "latency_ms": int((time.perf_counter() - t0) * 1000)}
 
     @app.get("/api/trace/{sid}")
     async def get_trace(sid: str):
