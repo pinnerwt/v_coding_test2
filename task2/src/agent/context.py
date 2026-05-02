@@ -21,32 +21,36 @@ def build_messages(
     page_header: str,
     replan_hint: str | None,
 ) -> list[dict]:
-    parts = [system, "", f"Goal: {goal}"]
+    sys_parts = [system]
+    if replan_hint:
+        sys_parts.append("")
+        sys_parts.append(replan_hint)
+
+    user_parts = [f"Goal: {goal}"]
     if qa:
-        parts.append("")
+        user_parts.append("")
         for q, a in qa:
-            parts.append(f"Q: {q}\nA: {a}")
-    parts.append("")
-    parts.append("URL notes:")
-    parts.append(url_notes or "(none)")
-    parts.append("")
-    parts.append(page_header)
+            user_parts.append(f"Q: {q}\nA: {a}")
+    user_parts.append("")
+    user_parts.append("URL notes:")
+    user_parts.append(url_notes or "(none)")
+    user_parts.append("")
+    user_parts.append(page_header)
 
     older = tape[:-K_RECENT] if len(tape) > K_RECENT else []
     recent = tape[-K_RECENT:] if len(tape) > K_RECENT else tape
     if older:
-        parts.append("")
-        parts.append("Earlier steps:")
+        user_parts.append("")
+        user_parts.append("Earlier steps:")
         for i, step in enumerate(older):
-            parts.append(
+            user_parts.append(
                 f"- step {i}: {_short(step['action'], step.get('args', {}), step.get('obs', ''))}"
             )
 
-    if replan_hint:
-        parts.append("")
-        parts.append(replan_hint)
-
-    msgs: list[dict] = [{"role": "system", "content": "\n".join(parts)}]
+    msgs: list[dict] = [
+        {"role": "system", "content": "\n".join(sys_parts)},
+        {"role": "user", "content": "\n".join(user_parts)},
+    ]
     base_idx = len(tape) - len(recent)
     for off, step in enumerate(recent):
         idx = base_idx + off
