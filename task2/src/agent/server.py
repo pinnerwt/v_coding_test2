@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from pathlib import Path
 from typing import Any
@@ -97,7 +98,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request):
-        return templates.TemplateResponse("index.html", {"request": request})
+        return templates.TemplateResponse(request, "index.html")
 
     @app.get("/replay", response_class=HTMLResponse)
     async def replay_index(request: Request):
@@ -108,9 +109,9 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
             else []
         )
         return templates.TemplateResponse(
+            request,
             "replay.html",
             {
-                "request": request,
                 "sessions": sessions,
                 "selected": None,
                 "events": [],
@@ -123,9 +124,9 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
         sessions = sorted([p.stem for p in traces_dir.glob("*.jsonl")], reverse=True)
         events = read_trace(traces_dir / f"{sid}.jsonl")
         return templates.TemplateResponse(
+            request,
             "replay.html",
             {
-                "request": request,
                 "sessions": sessions,
                 "selected": sid,
                 "events": events,
@@ -173,3 +174,10 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
             pass
 
     return app
+
+
+def app_factory() -> FastAPI:
+    return build_app(
+        cfg=Config.from_env(),
+        data_dir=Path(os.getenv("DATA_DIR", "data")),
+    )
