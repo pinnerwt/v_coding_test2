@@ -26,6 +26,17 @@ HTML_SELECT = """<!doctype html><html><body>
 </select>
 </body></html>"""
 
+# Five anonymous selects (no accessible name) to expose the
+# (role, name)+nth resolution bug that hit canirun.ai (case 113).
+HTML_MANY_ANON_SELECTS = (
+    "<!doctype html><html><body>"
+    + "".join(
+        f"<select><option>opt-{i}-A</option><option>opt-{i}-B</option></select>"
+        for i in range(5)
+    )
+    + "</body></html>"
+)
+
 
 @pytest.mark.asyncio
 async def test_click_type_select_press(tmp_path):
@@ -91,6 +102,101 @@ async def test_click_on_select_short_circuits():
         assert out.startswith("ERROR:")
         assert "select_option" in out
         assert f"id={sid}" in out
+    finally:
+        await s.close()
+
+
+@pytest.mark.asyncio
+async def test_interactive_ids_are_tagged_on_dom_nodes():
+    """Each interactive element from list_interactive must carry a
+    `data-agent-eid` attribute matching its id. Resolving locators by
+    that attribute (instead of `get_by_role(role, name).nth(k)`) is what
+    fixes the canirun.ai (case 113) bug: the AX-tree enumeration order
+    can diverge from Playwright's role-matcher order when the AX tree
+    contains synthetic nodes get_by_role doesn't see, and nth() then
+    targets the wrong DOM node."""
+    s = BrowserSession()
+    await s.start()
+    try:
+        url = "data:text/html;base64," + base64.b64encode(HTML.encode()).decode()
+        tools = build_browser_tools(s)
+        await tools["goto"](url=url)
+        snap = json.loads(await tools["list_interactive"]())
+        # Every entry must have its eid stamped on the actual DOM element.
+        for entry in snap:
+            eid = entry["id"]
+            tagged = await s.page.evaluate(
+                "id => !!document.querySelector(`[data-agent-eid=\"${id}\"]`)",
+                eid,
+            )
+            assert tagged, f"id={eid} ({entry['role']}) has no data-agent-eid"
+    finally:
+        await s.close()
+
+
+@pytest.mark.asyncio
+async def test_stale_eid_attributes_cleared_between_snapshots():
+    """Two pages back-to-back: tags from the first must not leak DOM
+    state into the second snapshot's resolution. Re-snapshotting the
+    same page is allowed to renumber from zero, so we just check that
+    after the second snapshot, every surviving id resolves uniquely."""
+    s = BrowserSession()
+    await s.start()
+    try:
+        url1 = "data:text/html;base64," + base64.b64encode(HTML.encode()).decode()
+        url2 = (
+            "data:text/html;base64,"
+            + base64.b64encode(HTML_SELECT.encode()).decode()
+        )
+        tools = build_browser_tools(s)
+        await tools["goto"](url=url1)
+        json.loads(await tools["list_interactive"]())
+        await tools["goto"](url=url2)
+        snap2 = json.loads(await tools["list_interactive"]())
+        # Each id in the second snapshot must resolve to exactly one DOM node.
+        for entry in snap2:
+            count = await s.page.evaluate(
+                "id => document.querySelectorAll(`[data-agent-eid=\"${id}\"]`).length",
+                entry["id"],
+            )
+            assert count == 1, f"id={entry['id']} resolves to {count} nodes"
+    finally:
+        await s.close()
+
+
+@pytest.mark.asyncio
+async def test_each_id_resolves_to_distinct_dom_node():
+    """Bug from canirun.ai (case 113): list_interactive numbered N
+    anonymous comboboxes 0..N-1 by AX-tree order, but select_option
+    dispatched against `get_by_role('combobox').nth(k)` which counts
+    by Playwright's role-matcher — a different ordering when the AX
+    tree and role-matcher don't align. Result: the wrong <select> got
+    mutated.
+
+    Contract: setting a unique option on each id must mutate exactly
+    that select, never another one. Equivalent to "each id resolves
+    to a distinct DOM element"."""
+    s = BrowserSession()
+    await s.start()
+    try:
+        url = (
+            "data:text/html;base64,"
+            + base64.b64encode(HTML_MANY_ANON_SELECTS.encode()).decode()
+        )
+        tools = build_browser_tools(s)
+        await tools["goto"](url=url)
+        snap = json.loads(await tools["list_interactive"]())
+        combos = [e for e in snap if e["role"] == "combobox"]
+        assert len(combos) == 5, f"expected 5 combos, got {len(combos)}"
+        # Set the i-th select's value to opt-i-B via list_interactive id.
+        for i, c in enumerate(combos):
+            out = await tools["select_option"](id=c["id"], value=f"opt-{i}-B")
+            assert out.startswith("selected"), f"combo {i}: {out}"
+        # Each select must have its own option B set, not duplicates.
+        values = await s.page.evaluate(
+            "() => Array.from(document.querySelectorAll('select')).map(el => el.value)"
+        )
+        assert values == [f"opt-{i}-B" for i in range(5)], values
     finally:
         await s.close()
 

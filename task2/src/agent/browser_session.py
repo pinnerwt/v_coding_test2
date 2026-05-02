@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections import Counter
 from typing import Any
 
 from playwright.async_api import (
@@ -62,41 +61,77 @@ class BrowserSession:
         # Pull the accessibility tree via CDP — Playwright dropped page.accessibility
         # in newer releases, but the underlying Chrome DevTools Protocol still exposes it.
         assert self._ctx is not None, "call start() first"
+        # Clear stale data-agent-eid attributes from any prior snapshot so a
+        # surviving DOM node can't shadow a fresh id with an old one.
+        with contextlib.suppress(Exception):
+            await self.page.evaluate(
+                "() => document.querySelectorAll('[data-agent-eid]')"
+                ".forEach(el => el.removeAttribute('data-agent-eid'))"
+            )
         cdp = await self._ctx.new_cdp_session(self.page)
         try:
             await cdp.send("Accessibility.enable")
             res = await cdp.send("Accessibility.getFullAXTree")
-        finally:
-            await cdp.detach()
 
-        flat: list[dict[str, Any]] = []
-        self._element_map.clear()
-        next_id = 0
-        counts: Counter[tuple[str, str]] = Counter()
+            flat: list[dict[str, Any]] = []
+            self._element_map.clear()
+            next_id = 0
 
-        for node in res.get("nodes", []):
-            role = (node.get("role") or {}).get("value", "") or ""
-            name = (node.get("name") or {}).get("value", "") or ""
-            value_obj = node.get("value")
-            if role in _INTERACTIVE_ROLES:
+            # Each interactive AX node carries a backendDOMNodeId pointing
+            # at its real DOM element. We resolve that to a Runtime
+            # objectId and tag the element with `data-agent-eid="<eid>"`,
+            # then drive every subsequent action through a CSS locator on
+            # that attribute. This sidesteps the (role, name)+nth ordering
+            # bug that hit canirun.ai (case 113): the AX-tree enumeration
+            # order is not guaranteed to align with Playwright's role
+            # matcher when the AX tree contains synthetic nodes.
+            for node in res.get("nodes", []):
+                role = (node.get("role") or {}).get("value", "") or ""
+                if role not in _INTERACTIVE_ROLES:
+                    continue
+                bnid = node.get("backendDOMNodeId")
+                if not bnid:
+                    continue
+                try:
+                    resolved = await cdp.send(
+                        "DOM.resolveNode", {"backendNodeId": bnid}
+                    )
+                    object_id = resolved["object"]["objectId"]
+                except Exception:
+                    continue
                 eid = next_id
-                next_id += 1
+                try:
+                    await cdp.send(
+                        "Runtime.callFunctionOn",
+                        {
+                            "functionDeclaration": (
+                                "function(id){"
+                                " this.setAttribute('data-agent-eid', id);"
+                                "}"
+                            ),
+                            "objectId": object_id,
+                            "arguments": [{"value": str(eid)}],
+                        },
+                    )
+                except Exception:
+                    continue
+                finally:
+                    with contextlib.suppress(Exception):
+                        await cdp.send(
+                            "Runtime.releaseObject", {"objectId": object_id}
+                        )
+                name = (node.get("name") or {}).get("value", "") or ""
                 entry: dict[str, Any] = {"id": eid, "role": role, "name": name}
+                value_obj = node.get("value")
                 if value_obj is not None:
                     entry["value"] = value_obj.get("value")
                 flat.append(entry)
-                # Disambiguate duplicate (role, name) pairs with .nth(k) so strict mode
-                # doesn't choke when multiple elements share the same accessible name.
-                key = (role, name)
-                k = counts[key]
-                counts[key] += 1
-                with contextlib.suppress(Exception):
-                    base = (
-                        self.page.get_by_role(role, name=name)
-                        if name
-                        else self.page.get_by_role(role)
-                    )
-                    self._element_map[eid] = base.nth(k)
+                self._element_map[eid] = self.page.locator(
+                    f'[data-agent-eid="{eid}"]'
+                )
+                next_id += 1
+        finally:
+            await cdp.detach()
 
         # For each combobox that resolves to a real <select>, surface its
         # <option> text values inline. Without this the model has to guess
