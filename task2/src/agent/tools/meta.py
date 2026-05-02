@@ -1,0 +1,114 @@
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Callable
+
+from agent.notes_store import NotesStore
+from agent.tools.registry import Tool
+
+
+class LoopDone(Exception):
+    def __init__(self, status: str, answer: str):
+        super().__init__(f"done({status})")
+        self.status = status
+        self.answer = answer
+
+
+class QuestionChannel:
+    def __init__(self) -> None:
+        self._pending: str | None = None
+        self._fut: asyncio.Future | None = None
+
+    def pending(self) -> str | None:
+        return self._pending
+
+    async def ask(self, question: str) -> str:
+        loop = asyncio.get_event_loop()
+        self._pending = question
+        self._fut = loop.create_future()
+        try:
+            return await self._fut
+        finally:
+            self._pending = None
+            self._fut = None
+
+    def answer(self, text: str) -> None:
+        if self._fut and not self._fut.done():
+            self._fut.set_result(text)
+
+
+def build_meta_tools(
+    *,
+    notes: NotesStore | None,
+    current_url: Callable[[], str],
+    question_channel: QuestionChannel,
+) -> dict:
+    async def note(text: str) -> str:
+        if notes is not None:
+            notes.append(current_url(), text)
+        return "noted"
+
+    async def ask_user_question(question: str) -> str:
+        ans = await question_channel.ask(question)
+        return f"user said: {ans}"
+
+    async def done(status: str, answer: str) -> str:
+        raise LoopDone(status, answer)
+
+    return {"note": note, "ask_user_question": ask_user_question, "done": done}
+
+
+def build_meta_tool_list(
+    *,
+    notes: NotesStore | None,
+    current_url: Callable[[], str],
+    question_channel: QuestionChannel,
+) -> list[Tool]:
+    fns = build_meta_tools(
+        notes=notes, current_url=current_url, question_channel=question_channel
+    )
+    return [
+        Tool(
+            "note",
+            "Save a short note about the current URL for future runs.",
+            {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "thought": {"type": "string"},
+                },
+                "required": ["text"],
+            },
+            fns["note"],
+        ),
+        Tool(
+            "ask_user_question",
+            "Ask the user a clarifying question; loop blocks until answered.",
+            {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string"},
+                    "thought": {"type": "string"},
+                },
+                "required": ["question"],
+            },
+            fns["ask_user_question"],
+        ),
+        Tool(
+            "done",
+            "Finish the task. status ∈ {success, failed, needs_user}.",
+            {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["success", "failed", "needs_user"],
+                    },
+                    "answer": {"type": "string"},
+                    "thought": {"type": "string"},
+                },
+                "required": ["status", "answer"],
+            },
+            fns["done"],
+        ),
+    ]
