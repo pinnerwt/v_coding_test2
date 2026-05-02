@@ -5,8 +5,6 @@ def test_defaults(monkeypatch):
     for k in (
         "AGENT_MODEL_BASE_URL",
         "AGENT_MODEL_NAME",
-        "SUMMARIZER_MODEL_BASE_URL",
-        "SUMMARIZER_MODEL_NAME",
         "MAX_STEPS",
         "URL_NOTE_QUERY_STRIP",
         "DEEPSEEK_API_KEY",
@@ -15,19 +13,15 @@ def test_defaults(monkeypatch):
     cfg = Config.from_env()
     assert cfg.agent_model_base_url == "https://api.deepseek.com"
     assert cfg.agent_model_name == "deepseek-chat"
-    assert cfg.summarizer_model_base_url == "https://api.deepseek.com"
-    assert cfg.summarizer_model_name == "deepseek-chat"
     assert cfg.max_steps == 50
     assert cfg.url_note_query_strip is True
     assert cfg.agent_api_key is None
-    assert cfg.summarizer_api_key is None
 
 
 def test_deepseek_api_key_picked_up(monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-123")
     cfg = Config.from_env()
     assert cfg.agent_api_key == "sk-test-123"
-    assert cfg.summarizer_api_key == "sk-test-123"
 
 
 def test_env_overrides(monkeypatch):

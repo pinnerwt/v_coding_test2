@@ -11,14 +11,14 @@ from agent.server import build_app
 def _scripted_llm(steps):
     """steps: list[(tool_name, args_dict)] — replays in order for agent (tool) calls.
 
-    Non-tool LLM calls (e.g. summarizer) get an empty assistant content reply and
+    Non-tool LLM calls (e.g. distillation) get an empty assistant content reply and
     do NOT consume the script.
     """
     it = iter(steps)
 
     async def handler(request):
         body = json.loads(request.content)
-        # Summarizer / non-tool calls: respond benign, don't consume script.
+        # Distillation / non-tool calls: respond benign, don't consume script.
         if "tools" not in body:
             return httpx.Response(
                 200,
