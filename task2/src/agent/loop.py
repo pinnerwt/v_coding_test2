@@ -104,6 +104,7 @@ class ReactLoop:
         self.list_interactive_cache = OffsetCache()
         self._read_limit = 1600
         self._max_auto_advance_hops = 32
+        self._hidden_tools: set[str] = set()
 
     def _current_url(self) -> str:
         try:
@@ -137,9 +138,9 @@ class ReactLoop:
         return (s["action"], json.dumps(s.get("args", {}), sort_keys=True))
 
     async def run(self, goal: str) -> dict:
-        tools = self.registry.to_openai_tools()
         state = "none"  # none | hinted | asked | giveup
         for step_idx in range(self.max_steps):
+            tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
             url = self._current_url()
             url_notes = self.notes.get(url) if self.notes else ""
             replan_hint = _REPLAN_HINT if state == "hinted" else None
@@ -211,6 +212,7 @@ class ReactLoop:
                     max_hops=self._max_auto_advance_hops,
                 )
                 if plan.exhausted:
+                    self._hidden_tools.add("read")
                     obs = (
                         f"(end of page; tried offsets up to {plan.served_offset}, "
                         f"page length {len(text)}). Try read_grep or done()."

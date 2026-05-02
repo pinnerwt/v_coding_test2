@@ -129,3 +129,63 @@ async def test_read_auto_advances_on_repeat(tmp_path):
     step1_obs = loop.tape[1]["obs"]
     assert step1_obs.startswith("[auto-advanced 0→1600")
     assert ("B" * 1600) in step1_obs
+
+
+@pytest.mark.asyncio
+async def test_read_hidden_after_end_of_page_until_mutation(tmp_path):
+    """When auto-advance walks past len(text), the synthetic obs is
+    returned AND `read` must be removed from next turn's tool list. After
+    a state-changing tool produces a global diff, `read` is exposed again."""
+    short_text = "A" * 1600
+    browser = _StubBrowser(short_text)
+    transport = _mock_llm_calls(
+        [
+            ("read", {"offset": 0, "thought": "first read"}),
+            ("read", {"offset": 0, "thought": "second read; should auto-advance and exhaust"}),
+            ("done", {"status": "success", "answer": "ok"}),
+        ]
+    )
+    # The third LLM call should NOT see `read` in its tool list. We capture
+    # the tool list from the third request via the mock transport.
+    captured_tools: list[list[str]] = []
+
+    async def capturing_handler(request):
+        body = json.loads(request.content.decode())
+        captured_tools.append([t["function"]["name"] for t in body.get("tools", [])])
+        # Reuse the scripted call sequence:
+        return await transport.handler(request)
+
+    capturing_transport = httpx.MockTransport(capturing_handler)
+
+    llm = LLMClient("http://t/v1", "m", transport=capturing_transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    reg.register(_build_read_tool(browser))
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=5,
+    )
+    await loop.run("anything")
+
+    # Third turn (index 2) should not have `read` in tools.
+    assert "read" not in captured_tools[2]
