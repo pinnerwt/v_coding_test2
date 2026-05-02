@@ -635,3 +635,89 @@ async def test_read_grep_dedup_returns_synthetic_when_pattern_repeats(tmp_path):
     step1 = loop.tape[1]
     assert step1["action"] == "read_grep"
     assert "already searched" in step1["obs"].lower()
+
+
+@pytest.mark.asyncio
+async def test_list_interactive_hidden_when_hop_cap_exhausts(tmp_path):
+    """When list_interactive auto-advance hits max_auto_advance_hops with the
+    snapshot still cache-equal at every offset, the loop must:
+      1. Emit a synthetic end-of-list obs (not an `[auto-advanced ...]` slice).
+      2. Drop `list_interactive` from the next turn's tool list.
+    """
+    browser = _StubBrowser("irrelevant")
+
+    async def list_interactive(offset: int = 0, limit: int = 50, thought: str = ""):
+        # Constant snapshot regardless of offset → every advance is a cache hit.
+        return "static-snap"
+
+    # max_auto_advance_hops=2 → call 1 records {0}; call 2 records {1}; call 3
+    # walks 0→1 (hops 1,2) and exhausts the cap with all visited offsets cached.
+    transport = _mock_llm_calls(
+        [
+            ("list_interactive", {"offset": 0, "limit": 1, "thought": "first"}),
+            ("list_interactive", {"offset": 0, "limit": 1, "thought": "second"}),
+            ("list_interactive", {"offset": 0, "limit": 1, "thought": "third"}),
+            ("done", {"status": "success", "answer": "ok"}),
+        ]
+    )
+    captured_tools: list[list[str]] = []
+
+    async def capturing_handler(request):
+        body = json.loads(request.content.decode())
+        captured_tools.append([t["function"]["name"] for t in body.get("tools", [])])
+        return await transport.handler(request)
+
+    capturing_transport = httpx.MockTransport(capturing_handler)
+    llm = LLMClient("http://t/v1", "m", transport=capturing_transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    reg.register(
+        Tool(
+            "list_interactive",
+            "li",
+            {
+                "type": "object",
+                "properties": {
+                    "offset": {"type": "integer"},
+                    "limit": {"type": "integer"},
+                    "thought": {"type": "string"},
+                },
+            },
+            list_interactive,
+        )
+    )
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=6,
+        max_auto_advance_hops=2,
+    )
+    await loop.run("anything")
+
+    # Step 2 (third list_interactive call) should hit hop cap and emit
+    # the synthetic end-of-list obs, not an auto-advanced slice.
+    step2 = loop.tape[2]
+    assert step2["action"] == "list_interactive"
+    assert "end of interactive list" in step2["obs"].lower()
+    assert not step2["obs"].startswith("[auto-advanced")
+    # Fourth LLM turn (index 3) must not see `list_interactive` in its tool list.
+    assert "list_interactive" not in captured_tools[3]

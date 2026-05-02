@@ -269,12 +269,14 @@ class ReactLoop:
                 served_offset = requested_offset
                 served_str = await _safe_call_li(served_offset)
                 hops = 0
+                exhausted = False
                 if not served_str.startswith("ERROR:"):
                     while self.list_interactive_cache.was_served(
                         offset=served_offset, candidate=served_str
                     ):
                         hops += 1
                         if hops >= self._max_auto_advance_hops:
+                            exhausted = True
                             break
                         served_offset += limit
                         served_str = await _safe_call_li(served_offset)
@@ -282,6 +284,13 @@ class ReactLoop:
                             break
                 if served_str.startswith("ERROR:"):
                     obs_override = served_str
+                    args = {**args, "offset": served_offset}
+                elif exhausted:
+                    self._hidden_tools.add("list_interactive")
+                    obs_override = (
+                        f"(end of interactive list; tried offsets up to {served_offset} "
+                        f"with no new entries). Try done() or click an existing id."
+                    )
                     args = {**args, "offset": served_offset}
                 else:
                     self.list_interactive_cache.record(offset=served_offset, served=served_str)
