@@ -22,6 +22,19 @@ def _extract_urls(text: str) -> list[str]:
     return out
 
 
+def _is_goto_allowed(url: str, allowlist: list[str]) -> bool:
+    if not url:
+        return False
+    u = url.lower()
+    for src in allowlist:
+        s = (src or "").lower()
+        if not s:
+            continue
+        if u in s or s in u:
+            return True
+    return False
+
+
 _READ_LIMIT = 2000
 
 
