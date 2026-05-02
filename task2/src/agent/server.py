@@ -105,6 +105,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                         browser=browser,
                         question_channel=qc,
                         max_steps=cfg.max_steps,
+                        send_transient=send_event,
                     )
                     return await loop.run(goal)
                 finally:
