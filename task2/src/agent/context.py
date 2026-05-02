@@ -4,12 +4,48 @@ import json
 from typing import Any
 
 K_RECENT = 8
+NOVELTY_WINDOW = 10
+OBS_FINGERPRINT_LEN = 200
 
 
 def _short(action: str, args: dict, obs: str) -> str:
     lines = (obs or "").splitlines()
     obs1 = lines[0][:120] if lines else ""
     return f"{action}({json.dumps(args, ensure_ascii=False)[:80]}) -> {obs1}"
+
+
+def _call_str(action: str, args: dict) -> str:
+    return f"{action}({json.dumps(args or {}, ensure_ascii=False, sort_keys=True)[:60]})"
+
+
+def _obs_fingerprint(obs: str) -> str:
+    return (obs or "")[:OBS_FINGERPRINT_LEN]
+
+
+def _histogram_line(tape: list[dict[str, Any]]) -> str | None:
+    counts: dict[str, int] = {}
+    for s in tape:
+        k = _call_str(s.get("action", ""), s.get("args", {}))
+        counts[k] = counts.get(k, 0) + 1
+    repeats = sorted(
+        ((k, v) for k, v in counts.items() if v >= 2),
+        key=lambda kv: (-kv[1], kv[0]),
+    )
+    if not repeats:
+        return None
+    return "Calls so far (≥2): " + ", ".join(f"{k}×{v}" for k, v in repeats)
+
+
+def _novelty_line(tape: list[dict[str, Any]]) -> str | None:
+    if len(tape) < NOVELTY_WINDOW:
+        return None
+    earlier = tape[:-NOVELTY_WINDOW]
+    recent = tape[-NOVELTY_WINDOW:]
+    earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in earlier}
+    novel = sum(
+        1 for s in recent if _obs_fingerprint(s.get("obs", "")) not in earlier_fps
+    )
+    return f"Novel observations in last {NOVELTY_WINDOW} steps: {novel}/{NOVELTY_WINDOW}"
 
 
 def build_messages(
@@ -37,6 +73,14 @@ def build_messages(
     user_parts.append(url_notes or "(none)")
     user_parts.append("")
     user_parts.append(page_header)
+
+    hist = _histogram_line(tape)
+    if hist:
+        user_parts.append("")
+        user_parts.append(hist)
+    nov = _novelty_line(tape)
+    if nov:
+        user_parts.append(nov)
 
     older = tape[:-K_RECENT] if len(tape) > K_RECENT else []
     recent = tape[-K_RECENT:] if len(tape) > K_RECENT else tape

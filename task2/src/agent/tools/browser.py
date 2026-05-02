@@ -104,6 +104,16 @@ def build_browser_tools(
         try:
             loc = session.locator(id)
             try:
+                tag = await loc.evaluate("el => el.tagName")
+            except Exception:
+                tag = ""
+            if tag == "SELECT":
+                return (
+                    f"ERROR: id={id} is a <select>; clicking it does not open a "
+                    f"DOM-visible dropdown. Use select_option(id={id}, value=<one of "
+                    "the entries from list_interactive's `options` field>) instead."
+                )
+            try:
                 await loc.click(timeout=3000)
             except Exception:
                 await loc.evaluate("el => el.click()")
@@ -124,7 +134,7 @@ def build_browser_tools(
     async def select_option(id: int, value: str) -> str:
         try:
             loc = session.locator(id)
-            await loc.select_option(value)
+            await loc.select_option(value, timeout=5_000)
             return f"selected {value!r} on id={id}"
         except Exception as e:
             return f"ERROR: {e}"

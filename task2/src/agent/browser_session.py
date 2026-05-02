@@ -98,7 +98,27 @@ class BrowserSession:
                     )
                     self._element_map[eid] = base.nth(k)
 
-        return flat[offset : offset + limit]
+        # For each combobox that resolves to a real <select>, surface its
+        # <option> text values inline. Without this the model has to guess
+        # what `value` to pass to select_option and Playwright blocks for
+        # 30s on a non-match (canirun.ai bench case 113).
+        page_slice = flat[offset : offset + limit]
+        for entry in page_slice:
+            if entry["role"] != "combobox":
+                continue
+            loc = self._element_map.get(entry["id"])
+            if loc is None:
+                continue
+            with contextlib.suppress(Exception):
+                opts = await loc.evaluate(
+                    "el => el.tagName === 'SELECT'"
+                    " ? Array.from(el.options).map(o => (o.textContent || '').trim())"
+                    " : null"
+                )
+                if isinstance(opts, list):
+                    entry["options"] = opts[:100]
+
+        return page_slice
 
     def locator(self, eid: int) -> Locator:
         if eid not in self._element_map:

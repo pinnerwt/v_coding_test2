@@ -70,5 +70,11 @@
     "web_name": "Wolfram Alpha",
     "ques": "What is the result of the integral of x squared from 0 to 3 according to Wolfram Alpha?",
     "web": "https://www.wolframalpha.com"
+  },
+  {
+    "id": "113",
+    "web_name": "CanIRun.ai",
+    "ques": "I have an RTX 3090 with 24 GB VRAM. According to CanIRun.ai, what is the best LLM I can run locally?",
+    "web": "https://canirun.ai"
   }
 ]

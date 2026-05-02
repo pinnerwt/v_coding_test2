@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agent.context import build_messages
+from agent.context import NOVELTY_WINDOW, _obs_fingerprint, build_messages
 from agent.llm import LLMClient
 from agent.tools.meta import LoopDone, QuestionChannel
 from agent.tools.registry import ToolRegistry
@@ -21,6 +21,13 @@ _REPLAN_HINT = (
     "Re-read URL notes and pick a DIFFERENT action this turn — different element, "
     "navigate elsewhere, call note() to record the failure, or ask_user_question."
 )
+
+# Force a done(failed) when the agent produces this many consecutive
+# observations whose fingerprints were already seen earlier in the tape.
+# Catches arbitrary-length cycles that the hint state machine misses
+# because a single varied action keeps resetting it. canirun.ai bench
+# case 113 burned 50 steps because no such ceiling existed.
+NO_PROGRESS_GIVEUP = 12
 
 
 def _step_key(step: dict) -> tuple:
@@ -91,6 +98,7 @@ class ReactLoop:
         self.send_transient = send_transient
         self.tape: list[dict[str, Any]] = []
         self.qa: list[tuple[str, str]] = []
+        self.no_progress_streak = 0
 
     def _current_url(self) -> str:
         try:
@@ -105,6 +113,19 @@ class ReactLoop:
         if len(self.tape) < 3:
             return False
         return _step_key(self.tape[-1]) == _step_key(self.tape[-2]) == _step_key(self.tape[-3])
+
+    def _no_progress(self) -> bool:
+        """True when the last NOVELTY_WINDOW observations have all been seen
+        earlier in the tape — catches arbitrary-length cycles that
+        _last_three_match misses (e.g. click→list→read→escape→click→…)."""
+        if len(self.tape) < NOVELTY_WINDOW + 1:
+            return False
+        earlier = self.tape[: -NOVELTY_WINDOW]
+        recent = self.tape[-NOVELTY_WINDOW:]
+        earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in earlier}
+        return all(
+            _obs_fingerprint(s.get("obs", "")) in earlier_fps for s in recent
+        )
 
     def _last_action_args(self) -> tuple | None:
         if not self.tape:
@@ -209,7 +230,13 @@ class ReactLoop:
                 obs = f"ERROR: {e}"
 
             obs_str = obs if isinstance(obs, str) else json.dumps(obs)
+            new_fp = _obs_fingerprint(obs_str)
+            earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in self.tape}
             self.tape.append({"thought": thought, "action": name, "args": args, "obs": obs_str})
+            if new_fp in earlier_fps:
+                self.no_progress_streak += 1
+            else:
+                self.no_progress_streak = 0
             self.trace.write(
                 {
                     "type": "step",
@@ -222,6 +249,16 @@ class ReactLoop:
                     },
                 }
             )
+
+            if self.no_progress_streak >= NO_PROGRESS_GIVEUP:
+                answer = (
+                    f"stuck: no novel observation for {self.no_progress_streak} "
+                    "consecutive steps"
+                )
+                self.trace.write(
+                    {"type": "done", "payload": {"status": "failed", "answer": answer}}
+                )
+                return {"status": "failed", "answer": answer}
 
             if name == "goto" and obs_str.startswith("ERROR: blocked goto"):
                 self.trace.write(
@@ -256,7 +293,7 @@ class ReactLoop:
                             {"type": "summarizer_error", "payload": {"error": str(e)[:200]}}
                         )
 
-            if state == "none" and self._last_three_match():
+            if state == "none" and (self._last_three_match() or self._no_progress()):
                 state = "hinted"
 
         self.trace.write({"type": "done", "payload": {"status": "failed", "answer": "max steps"}})
