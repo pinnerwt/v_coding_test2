@@ -16,6 +16,24 @@ _SYSTEM = (
     "answer) when the user goal is satisfied or impossible."
 )
 
+_REPLAN_HINT = (
+    "REPLAN: You repeated the same action 3 times with the same observation. "
+    "Re-read URL notes and pick a DIFFERENT action this turn — different element, "
+    "navigate elsewhere, call note() to record the failure, or ask_user_question."
+)
+
+
+def _step_key(step: dict) -> tuple:
+    return (
+        step.get("action"),
+        json.dumps(step.get("args", {}), sort_keys=True),
+        step.get("obs"),
+    )
+
+
+def _action_key(name: str, args: dict) -> tuple:
+    return (name, json.dumps(args or {}, sort_keys=True))
+
 
 class ReactLoop:
     def __init__(
@@ -50,11 +68,28 @@ class ReactLoop:
     def _page_header(self) -> str:
         return f"URL={self._current_url()}"
 
+    def _last_three_match(self) -> bool:
+        if len(self.tape) < 3:
+            return False
+        return (
+            _step_key(self.tape[-1])
+            == _step_key(self.tape[-2])
+            == _step_key(self.tape[-3])
+        )
+
+    def _last_action_args(self) -> tuple | None:
+        if not self.tape:
+            return None
+        s = self.tape[-1]
+        return (s["action"], json.dumps(s.get("args", {}), sort_keys=True))
+
     async def run(self, goal: str) -> dict:
         tools = self.registry.to_openai_tools()
+        state = "none"  # none | hinted | asked | giveup
         for step_idx in range(self.max_steps):
             url = self._current_url()
             url_notes = self.notes.get(url) if self.notes else ""
+            replan_hint = _REPLAN_HINT if state == "hinted" else None
             messages = build_messages(
                 system=_SYSTEM,
                 goal=goal,
@@ -62,7 +97,7 @@ class ReactLoop:
                 url_notes=url_notes,
                 tape=self.tape,
                 page_header=self._page_header(),
-                replan_hint=None,
+                replan_hint=replan_hint,
             )
             msg = await self.llm.chat(
                 messages, tools=tools, tool_choice="auto", reasoning=False
@@ -77,6 +112,29 @@ class ReactLoop:
             name = tc["function"]["name"]
             args = json.loads(tc["function"]["arguments"] or "{}")
             thought = args.pop("thought", "") if isinstance(args, dict) else ""
+
+            last_aa = self._last_action_args()
+            new_aa = _action_key(name, args)
+            if state == "hinted":
+                if last_aa is not None and new_aa == last_aa:
+                    name = "ask_user_question"
+                    args = {
+                        "question": (
+                            f"I'm stuck on {self._current_url()}: same action keeps "
+                            "yielding the same result. What should I try?"
+                        )
+                    }
+                    state = "asked"
+                else:
+                    state = "none"
+            elif state == "asked" and last_aa is not None and new_aa == last_aa:
+                name = "done"
+                args = {
+                    "status": "failed",
+                    "answer": "stuck after user clarification",
+                }
+                state = "giveup"
+
             try:
                 obs = await self.registry.call(name, args)
             except LoopDone as d:
@@ -99,6 +157,9 @@ class ReactLoop:
                     }
                 )
                 return {"status": d.status, "answer": d.answer}
+            except Exception as e:
+                obs = f"ERROR: {e}"
+
             obs_str = obs if isinstance(obs, str) else json.dumps(obs)
             self.tape.append(
                 {"thought": thought, "action": name, "args": args, "obs": obs_str}
@@ -115,6 +176,10 @@ class ReactLoop:
                     },
                 }
             )
+
+            if state == "none" and self._last_three_match():
+                state = "hinted"
+
         self.trace.write(
             {"type": "done", "payload": {"status": "failed", "answer": "max steps"}}
         )
