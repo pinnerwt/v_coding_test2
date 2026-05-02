@@ -76,7 +76,22 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                 )
                 summarizer = Summarizer(summ_llm, notes)
                 reg = ToolRegistry()
-                for t in build_browser_tool_list(browser):
+                loop_holder: list = []
+
+                def allowlist_sources():
+                    if not loop_holder:
+                        return [goal]
+                    return (
+                        [goal]
+                        + [step.get("obs", "") for step in loop_holder[0].tape]
+                        + [browser.page.url or ""]
+                    )
+
+                for t in build_browser_tool_list(
+                    browser,
+                    restrict_goto=cfg.restrict_goto,
+                    allowlist_sources=allowlist_sources,
+                ):
                     reg.register(t)
                 for t in build_meta_tool_list(
                     notes=notes,
@@ -107,6 +122,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                         max_steps=cfg.max_steps,
                         send_transient=send_event,
                     )
+                    loop_holder.append(loop)
                     return await loop.run(goal)
                 finally:
                     pump_task.cancel()
