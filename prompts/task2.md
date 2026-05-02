@@ -3,3 +3,6 @@ I want to build a web agent for Task2, with ReAct structure. When the agent navi
 I also want to add monitors (token usages, server up/down, llm server up/down) at the bottom of the page. Where can I see the trace history? I think we can design the page like chatgpt, where "Replay past sessions" is just a collapsable column on the left, and we can select the session from it. For the trace history, we can "chat" with the agent and the trace history are a single lines with a little summary, while expandable when the user clicks on it.
 
 Can you look into this case: Go to https://arxiv.org and Find the year when the paper 'Generative Adversarial Networks' by Goodfellow et al. was submitted to arXiv. , in read({}), there is no the url returned that we use goto({xxx}) in the next step.
+
+1. Justified the chat UI (right aligned, no need to scroll, left aligned and don't leave a blank if the column is not collapsed.) 2. Sort the sessions by time (most
+  recent at the top). 3. Check latest sessions and verify that their trace is optimized/not hallucinating.
