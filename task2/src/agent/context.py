@@ -42,9 +42,7 @@ def _novelty_line(tape: list[dict[str, Any]]) -> str | None:
     earlier = tape[:-NOVELTY_WINDOW]
     recent = tape[-NOVELTY_WINDOW:]
     earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in earlier}
-    novel = sum(
-        1 for s in recent if _obs_fingerprint(s.get("obs", "")) not in earlier_fps
-    )
+    novel = sum(1 for s in recent if _obs_fingerprint(s.get("obs", "")) not in earlier_fps)
     return f"Novel observations in last {NOVELTY_WINDOW} steps: {novel}/{NOVELTY_WINDOW}"
 
 
@@ -57,6 +55,7 @@ def build_messages(
     tape: list[dict[str, Any]],
     page_header: str,
     replan_hint: str | None,
+    page_diff: str | None = None,
 ) -> list[dict]:
     sys_parts = [system]
     if replan_hint:
@@ -73,6 +72,10 @@ def build_messages(
     user_parts.append(url_notes or "(none)")
     user_parts.append("")
     user_parts.append(page_header)
+
+    if page_diff:
+        user_parts.append("")
+        user_parts.append(page_diff)
 
     hist = _histogram_line(tape)
     if hist:

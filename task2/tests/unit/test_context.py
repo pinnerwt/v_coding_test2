@@ -81,3 +81,53 @@ def test_emits_user_message_with_goal():
     user_content = user_msgs[0]["content"]
     assert "buy soap" in user_content
     assert "URL=x" in user_content
+
+
+def test_build_messages_appends_page_diff_when_present():
+    from agent.context import build_messages
+
+    msgs = build_messages(
+        system="sys",
+        goal="g",
+        qa=[],
+        url_notes="",
+        tape=[],
+        page_header="URL=https://x.test/",
+        replan_hint=None,
+        page_diff="Page changes since last turn (+1 / -0 lines):\n  + 'Sort: Params'",
+    )
+    user = next(m for m in msgs if m["role"] == "user")
+    assert "Page changes since last turn" in user["content"]
+    assert "Sort: Params" in user["content"]
+
+
+def test_build_messages_omits_page_diff_when_none():
+    from agent.context import build_messages
+
+    msgs = build_messages(
+        system="sys",
+        goal="g",
+        qa=[],
+        url_notes="",
+        tape=[],
+        page_header="URL=https://x.test/",
+        replan_hint=None,
+        page_diff=None,
+    )
+    user = next(m for m in msgs if m["role"] == "user")
+    assert "Page changes" not in user["content"]
+
+
+def test_build_messages_page_diff_default_is_none():
+    from agent.context import build_messages
+
+    msgs = build_messages(
+        system="sys",
+        goal="g",
+        qa=[],
+        url_notes="",
+        tape=[],
+        page_header="URL=https://x.test/",
+        replan_hint=None,
+    )
+    assert any(m["role"] == "user" for m in msgs)
