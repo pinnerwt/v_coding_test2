@@ -68,7 +68,7 @@ function renderEvent(ev) {
   const t = $("transcript");
   if (ev.type === "session_started") {
     const el = document.createElement("div");
-    el.className = "card expanded";
+    el.className = "card expanded goal";
     el.innerHTML = `<div class=summary><b>Goal:</b> ${esc(ev.payload.goal)}</div>`;
     t.appendChild(el);
   } else if (ev.type === "step") {
@@ -111,7 +111,7 @@ function renderEvent(ev) {
   } else if (ev.type === "done") {
     removeThinking();
     const el = document.createElement("div");
-    el.className = "card expanded";
+    el.className = "card expanded done";
     el.innerHTML = `<div class=summary><span class="pill ${esc(ev.payload.status)}">${esc(ev.payload.status)}</span> ${esc(ev.payload.answer)}</div>`;
     t.appendChild(el);
     finishRun(ev.payload.status);
@@ -183,7 +183,7 @@ $("newchat").onclick = () => {
   refreshSessions();
 };
 
-$("collapse").onclick = () => $("sidebar").classList.toggle("collapsed");
+$("collapse").onclick = () => $("layout").classList.toggle("collapsed");
 
 window.addEventListener("popstate", () => {
   const u = new URL(location.href);

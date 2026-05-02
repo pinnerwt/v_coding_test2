@@ -139,7 +139,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
         if not traces_dir.exists():
             return []
         out = []
-        for p in sorted(traces_dir.glob("*.jsonl"), reverse=True):
+        for p in traces_dir.glob("*.jsonl"):
             sid = p.stem
             goal = ""
             started_at = ""
@@ -155,6 +155,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                 elif ev.get("type") == "done":
                     status = ev["payload"].get("status", status)
             out.append({"sid": sid, "goal": goal, "started_at": started_at, "status": status})
+        out.sort(key=lambda s: s["started_at"] or "", reverse=True)
         return out
 
     @app.get("/api/llm_health")
