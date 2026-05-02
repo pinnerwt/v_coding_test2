@@ -1266,11 +1266,16 @@ async def test_regular_turns_use_tool_choice_required(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_loop_recovers_from_hallucinated_tool_name(tmp_path):
+@pytest.mark.parametrize(
+    "hallucinated_name",
+    ["ghost", "note", "definitely_not_a_tool"],
+)
+async def test_loop_recovers_from_hallucinated_tool_name(tmp_path, hallucinated_name):
     """When the model emits a tool_call name not in the filtered tools
-    list (e.g., picks a masked tool), the LLM client raises
-    ToolNameNotAllowed; the loop must catch it, synthesize a feedback
-    step into the tape, and continue — not crash the run."""
+    list (e.g., picks a masked tool, or the deleted ``note`` tool), the
+    LLM client raises ToolNameNotAllowed; the loop must catch it,
+    synthesize a feedback step into the tape, and continue — not crash
+    the run."""
     text = "A" * 1600
     browser = _StubBrowser(text)
     call_count = {"n": 0}
@@ -1278,10 +1283,10 @@ async def test_loop_recovers_from_hallucinated_tool_name(tmp_path):
 
     async def handler(request):
         call_count["n"] += 1
-        # First call: model fabricates a tool name not in the list ("ghost").
+        # First call: model fabricates a tool name not in the list.
         # Second call: model returns a valid done() to terminate.
         if call_count["n"] == 1:
-            tc_name, tc_args = "ghost", {}
+            tc_name, tc_args = hallucinated_name, {}
         else:
             tc_name, tc_args = "done", {"status": "success", "answer": "ok"}
         return httpx.Response(
@@ -1339,11 +1344,13 @@ async def test_loop_recovers_from_hallucinated_tool_name(tmp_path):
     result = await loop.run("anything")
 
     captured_tape_actions = [t["action"] for t in loop.tape]
-    assert "ghost" in captured_tape_actions, (
-        f"expected hallucinated 'ghost' to be recorded as a feedback step, "
-        f"got tape actions {captured_tape_actions!r}"
+    assert hallucinated_name in captured_tape_actions, (
+        f"expected hallucinated {hallucinated_name!r} to be recorded as a "
+        f"feedback step, got tape actions {captured_tape_actions!r}"
     )
-    feedback_step = next(t for t in loop.tape if t["action"] == "ghost")
+    feedback_step = next(
+        t for t in loop.tape if t["action"] == hallucinated_name
+    )
     assert "not available" in feedback_step["obs"]
     assert result == {"status": "success", "answer": "ok"}
 
