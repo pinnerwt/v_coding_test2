@@ -1,0 +1,74 @@
+[
+  {
+    "id": "101",
+    "web_name": "Wikipedia",
+    "ques": "Find the names of the winners of the Nobel Prize in Physics 2022 and what their prize was awarded for.",
+    "web": "https://en.wikipedia.org"
+  },
+  {
+    "id": "102",
+    "web_name": "Wikipedia",
+    "ques": "What is the current population of Tokyo according to the Wikipedia article on Tokyo?",
+    "web": "https://en.wikipedia.org"
+  },
+  {
+    "id": "103",
+    "web_name": "arXiv",
+    "ques": "Find the abstract of the paper 'BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding' on arXiv.",
+    "web": "https://arxiv.org"
+  },
+  {
+    "id": "104",
+    "web_name": "arXiv",
+    "ques": "Find the year when the paper 'Generative Adversarial Networks' by Goodfellow et al. was submitted to arXiv.",
+    "web": "https://arxiv.org"
+  },
+  {
+    "id": "105",
+    "web_name": "GitHub",
+    "ques": "How many open issues does the pytorch/pytorch repository have on GitHub?",
+    "web": "https://github.com"
+  },
+  {
+    "id": "106",
+    "web_name": "GitHub",
+    "ques": "What is the most used programming language in the huggingface/transformers repository on GitHub?",
+    "web": "https://github.com"
+  },
+  {
+    "id": "107",
+    "web_name": "HuggingFace",
+    "ques": "How many total downloads does the bert-base-uncased model have on Hugging Face?",
+    "web": "https://huggingface.co"
+  },
+  {
+    "id": "108",
+    "web_name": "HuggingFace",
+    "ques": "What is the license of the mistralai/Mistral-7B-v0.1 model on Hugging Face?",
+    "web": "https://huggingface.co"
+  },
+  {
+    "id": "109",
+    "web_name": "BBC News",
+    "ques": "What is the headline of the top news article currently on the BBC News homepage?",
+    "web": "https://www.bbc.com/news"
+  },
+  {
+    "id": "110",
+    "web_name": "BBC News",
+    "ques": "What is the title of the first article in the Science & Environment section of BBC News?",
+    "web": "https://www.bbc.com/news/science_and_environment"
+  },
+  {
+    "id": "111",
+    "web_name": "Cambridge Dictionary",
+    "ques": "What is the definition of the word 'ephemeral' according to the Cambridge Dictionary?",
+    "web": "https://dictionary.cambridge.org"
+  },
+  {
+    "id": "112",
+    "web_name": "Wolfram Alpha",
+    "ques": "What is the result of the integral of x squared from 0 to 3 according to Wolfram Alpha?",
+    "web": "https://www.wolframalpha.com"
+  }
+]
