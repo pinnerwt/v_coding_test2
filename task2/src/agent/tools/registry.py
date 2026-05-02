@@ -33,6 +33,20 @@ class ToolRegistry:
             for t in self._tools.values()
         ]
 
+    def to_openai_tools_filtered(self, *, exclude: set[str]) -> list[dict[str, Any]]:
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.parameters,
+                },
+            }
+            for t in self._tools.values()
+            if t.name not in exclude
+        ]
+
     async def call(self, name: str, args: dict[str, Any]) -> Any:
         if name not in self._tools:
             raise KeyError(name)
