@@ -45,3 +45,17 @@ class NotesStore:
             (key, merged),
         )
         self._conn.commit()
+
+    def set(self, url: str, text: str) -> None:
+        key = _normalise(url, self._query_strip)
+        trimmed = text
+        while len(trimmed.encode()) > _MAX_BYTES and "\n" in trimmed:
+            trimmed = trimmed.split("\n", 1)[1]
+        if len(trimmed.encode()) > _MAX_BYTES:
+            trimmed = trimmed.encode()[:_MAX_BYTES].decode("utf-8", "ignore")
+        self._conn.execute(
+            "INSERT INTO url_notes(url, notes, updated_at) VALUES(?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(url) DO UPDATE SET notes=excluded.notes, updated_at=CURRENT_TIMESTAMP",
+            (key, trimmed),
+        )
+        self._conn.commit()
