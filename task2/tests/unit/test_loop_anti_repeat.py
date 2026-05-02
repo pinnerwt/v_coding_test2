@@ -496,3 +496,70 @@ async def test_list_interactive_auto_advances(tmp_path):
     assert step1["action"] == "list_interactive"
     assert step1["obs"].startswith("[auto-advanced 0→1")  # advanced by `limit` of 1
     assert "snap-B" in step1["obs"]
+
+
+@pytest.mark.asyncio
+async def test_list_interactive_auto_advance_handles_tool_error(tmp_path):
+    """If the underlying list_interactive tool raises during auto-advance,
+    the error must be captured as an ERROR obs rather than crashing the loop."""
+    browser = _StubBrowser("irrelevant")
+
+    async def list_interactive(offset: int = 0, limit: int = 50, thought: str = ""):
+        raise RuntimeError("simulated tool failure")
+
+    transport = _mock_llm_calls(
+        [
+            ("list_interactive", {"offset": 0, "limit": 1, "thought": "first"}),
+            ("done", {"status": "failed", "answer": "tool errored"}),
+        ]
+    )
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    reg.register(
+        Tool(
+            "list_interactive",
+            "li",
+            {
+                "type": "object",
+                "properties": {
+                    "offset": {"type": "integer"},
+                    "limit": {"type": "integer"},
+                    "thought": {"type": "string"},
+                },
+            },
+            list_interactive,
+        )
+    )
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                    "answer": {"type": "string"},
+                },
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=5,
+    )
+    result = await loop.run("anything")
+    # Loop did not crash; first-step obs is an ERROR string from the tool.
+    assert loop.tape[0]["action"] == "list_interactive"
+    assert loop.tape[0]["obs"].startswith("ERROR:")
+    assert result["status"] == "failed"

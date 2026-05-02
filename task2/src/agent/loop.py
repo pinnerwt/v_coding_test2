@@ -243,30 +243,41 @@ class ReactLoop:
             if name == "list_interactive" and isinstance(args, dict):
                 requested_offset = int(args.get("offset", 0) or 0)
                 limit = int(args.get("limit", 50) or 50)
+
+                async def _safe_call_li(off: int, _name=name, _args=args) -> str:
+                    try:
+                        res = await self.registry.call(_name, {**_args, "offset": off})
+                    except Exception as e:
+                        return f"ERROR: {e}"
+                    return res if isinstance(res, str) else json.dumps(res)
+
                 served_offset = requested_offset
-                served = await self.registry.call(name, {**args, "offset": served_offset})
+                served_str = await _safe_call_li(served_offset)
                 hops = 0
-                while True:
-                    served_str = served if isinstance(served, str) else json.dumps(served)
-                    if not self.list_interactive_cache.was_served(
+                if not served_str.startswith("ERROR:"):
+                    while self.list_interactive_cache.was_served(
                         offset=served_offset, candidate=served_str
                     ):
-                        break
-                    hops += 1
-                    if hops >= self._max_auto_advance_hops:
-                        break
-                    served_offset += limit
-                    served = await self.registry.call(name, {**args, "offset": served_offset})
-                served_str = served if isinstance(served, str) else json.dumps(served)
-                self.list_interactive_cache.record(offset=served_offset, served=served_str)
-                if served_offset != requested_offset:
-                    served_str = (
-                        f"[auto-advanced {requested_offset}→{served_offset}: "
-                        f"{requested_offset} unchanged since prior list_interactive] "
-                        f"{served_str}"
-                    )
-                obs_override = served_str
-                args = {**args, "offset": served_offset}
+                        hops += 1
+                        if hops >= self._max_auto_advance_hops:
+                            break
+                        served_offset += limit
+                        served_str = await _safe_call_li(served_offset)
+                        if served_str.startswith("ERROR:"):
+                            break
+                if served_str.startswith("ERROR:"):
+                    obs_override = served_str
+                    args = {**args, "offset": served_offset}
+                else:
+                    self.list_interactive_cache.record(offset=served_offset, served=served_str)
+                    if served_offset != requested_offset:
+                        served_str = (
+                            f"[auto-advanced {requested_offset}→{served_offset}: "
+                            f"{requested_offset} unchanged since prior list_interactive] "
+                            f"{served_str}"
+                        )
+                    obs_override = served_str
+                    args = {**args, "offset": served_offset}
 
             auto_advance_prefix: str | None = None
             if name == "read" and isinstance(args, dict):
