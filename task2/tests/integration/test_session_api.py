@@ -105,6 +105,16 @@ async def test_llm_health_up(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_replay_routes_removed(tmp_path):
+    app = build_app(cfg=Config.from_env(), data_dir=tmp_path)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+        r = await ac.get("/replay")
+        assert r.status_code == 404
+        r = await ac.get("/replay/anything")
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_llm_health_down(tmp_path):
     async def handler(request):
         raise httpx.ConnectError("refused")

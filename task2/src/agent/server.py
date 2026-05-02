@@ -116,39 +116,6 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
     async def index(request: Request):
         return templates.TemplateResponse(request, "index.html")
 
-    @app.get("/replay", response_class=HTMLResponse)
-    async def replay_index(request: Request):
-        traces_dir = data_dir / "traces"
-        sessions = (
-            sorted([p.stem for p in traces_dir.glob("*.jsonl")], reverse=True)
-            if traces_dir.exists()
-            else []
-        )
-        return templates.TemplateResponse(
-            request,
-            "replay.html",
-            {
-                "sessions": sessions,
-                "selected": None,
-                "events": [],
-            },
-        )
-
-    @app.get("/replay/{sid}", response_class=HTMLResponse)
-    async def replay_one(request: Request, sid: str):
-        traces_dir = data_dir / "traces"
-        sessions = sorted([p.stem for p in traces_dir.glob("*.jsonl")], reverse=True)
-        events = read_trace(traces_dir / f"{sid}.jsonl")
-        return templates.TemplateResponse(
-            request,
-            "replay.html",
-            {
-                "sessions": sessions,
-                "selected": sid,
-                "events": events,
-            },
-        )
-
     @app.get("/api/sessions")
     async def list_sessions():
         traces_dir = data_dir / "traces"
