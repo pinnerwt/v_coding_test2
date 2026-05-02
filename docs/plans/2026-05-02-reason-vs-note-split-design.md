@@ -132,7 +132,7 @@ Existing tests:
 
 ### Migration
 
-- One-line wipe of `task2/data/notes.sqlite` as part of the migration
+- One-line wipe of `task2/data/url_notes.db` as part of the migration
   commit. The existing rows are polluted with task-state from the
   agent-as-author era; carrying them forward via the distiller's
   prior-note input would propagate the pollution. A clean slate is
@@ -152,7 +152,7 @@ Existing tests:
   task-state.
 - **Merge**: LLM does the merge (prior note + new distillation → unified
   list). Code does no dedup.
-- **Migration**: wipe `notes.sqlite`.
+- **Migration**: wipe `url_notes.db`.
 
 ## Out of Scope
 

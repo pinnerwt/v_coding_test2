@@ -874,21 +874,21 @@ git commit -m "feat(task2): remove agent-callable note() tool"
 
 ---
 
-## Task 7 — Migration: wipe `notes.sqlite` and update `prompts/task2.md`
+## Task 7 — Migration: wipe `url_notes.db` and update `prompts/task2.md`
 
 Final cleanup. The existing SQLite rows are polluted with task-state from the agent-as-author era; carrying them forward via the distiller's `prior_note` input would propagate the pollution. Wipe and start fresh.
 
 **Files:**
-- Delete: `task2/data/notes.sqlite`
+- Delete: `task2/data/url_notes.db`
 - Modify: `prompts/task2.md`
 
 **Step 1 — Wipe the SQLite**
 
 ```bash
-rm -f task2/data/notes.sqlite
+rm -f task2/data/url_notes.db
 ```
 
-(Confirm there's no test fixture pointing at this file — `grep -r "data/notes.sqlite" task2/tests` should return nothing. Tests use `tmp_path`.)
+(Confirm there's no test fixture pointing at this file — `grep -r "data/url_notes.db" task2/tests` should return nothing. Tests use `tmp_path`.)
 
 **Step 2 — Update `prompts/task2.md`**
 
@@ -924,12 +924,12 @@ Run case 113 once:
 uv run python scripts/bench_webvoyager.py --ids 113
 ```
 
-Expected: the run completes (success or failed). After it finishes, inspect `task2/data/notes.sqlite`:
+Expected: the run completes (success or failed). After it finishes, inspect `task2/data/url_notes.db`:
 
 ```bash
 uv run python -c "
 from agent.notes_store import NotesStore
-n = NotesStore('task2/data/notes.sqlite')
+n = NotesStore('task2/data/url_notes.db')
 print(n.get('https://www.canirun.ai/'))
 "
 ```
@@ -942,8 +942,8 @@ If the row contains task-state, the distillation prompt needs tightening — go 
 
 ```bash
 git add prompts/task2.md
-# notes.sqlite is gitignored; the rm doesn't show in git status
-git commit -m "docs(task2): update prompt for reason/note split + wipe stale notes.sqlite"
+# url_notes.db is gitignored; the rm doesn't show in git status
+git commit -m "docs(task2): update prompt for reason/note split + wipe stale url_notes.db"
 ```
 
 ---
@@ -957,7 +957,7 @@ Before declaring the plan complete, verify all of these:
 - [ ] `agent.tools.meta` exposes `reason` but NOT `note`.
 - [ ] `agent.distill.distill_page_knowledge` exists and is the only writer to `NotesStore` outside of tests.
 - [ ] `agent.summarizer` no longer exists; no test references it.
-- [ ] One real bench case (any) writes a goal-agnostic page-fact list to `notes.sqlite` after `done()`.
+- [ ] One real bench case (any) writes a goal-agnostic page-fact list to `url_notes.db` after `done()`.
 - [ ] `prompts/task2.md` mentions `reason` and the auto-distill behavior, not `note`.
 
 ---
