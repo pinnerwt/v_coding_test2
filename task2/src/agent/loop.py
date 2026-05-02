@@ -138,6 +138,23 @@ class ReactLoop:
         except Exception:
             return ""
 
+    async def _run_distill(self, *, status: str, answer: str) -> None:
+        """Distill page-knowledge after a done() — both natural and forced.
+        Per design: failure-mode page knowledge (Cloudflare walls, CAPTCHAs,
+        dead-ends) is the most valuable output, so this MUST run on every
+        force-done path too, not just the natural LoopDone handler."""
+        await distill_page_knowledge(
+            llm=self.llm,
+            notes=self.notes,
+            url=self._current_url(),
+            goal=self._goal,
+            status=status,
+            answer=answer,
+            tape=self.tape,
+            reason_log=self.reason_log,
+            trace=self.trace,
+        )
+
     def _page_header(self) -> str:
         return f"URL={self._current_url()}"
 
@@ -170,6 +187,7 @@ class ReactLoop:
         return (s["action"], json.dumps(s.get("args", {}), sort_keys=True))
 
     async def run(self, goal: str) -> dict:
+        self._goal = goal
         state = "none"  # none | hinted | asked | giveup
         for step_idx in range(self.max_steps):
             if step_idx == self.max_steps - 1:
@@ -189,6 +207,7 @@ class ReactLoop:
                     reason_log=self.reason_log,
                 )
                 self.trace.write({"type": "done", "payload": result})
+                await self._run_distill(status=result["status"], answer=result["answer"])
                 return result
             try:
                 current_text = await self.browser.page.evaluate("document.body.innerText")
@@ -303,6 +322,7 @@ class ReactLoop:
                         reason_log=self.reason_log,
                     )
                     self.trace.write({"type": "done", "payload": result})
+                    await self._run_distill(status=result["status"], answer=result["answer"])
                     return result
                 continue
             if usage is not None:
@@ -347,6 +367,7 @@ class ReactLoop:
                     reason_log=self.reason_log,
                 )
                 self.trace.write({"type": "done", "payload": result})
+                await self._run_distill(status=result["status"], answer=result["answer"])
                 return result
 
             read_grep_synthetic: str | None = None
@@ -482,6 +503,7 @@ class ReactLoop:
                             reason_log=self.reason_log,
                         )
                         self.trace.write({"type": "done", "payload": result})
+                        await self._run_distill(status=result["status"], answer=result["answer"])
                         return result
                     continue
                 args = {**args, "offset": plan.served_offset}
@@ -531,17 +553,7 @@ class ReactLoop:
                         "payload": {"status": d.status, "answer": d.answer},
                     }
                 )
-                await distill_page_knowledge(
-                    llm=self.llm,
-                    notes=self.notes,
-                    url=self._current_url(),
-                    goal=goal,
-                    status=d.status,
-                    answer=d.answer,
-                    tape=self.tape,
-                    reason_log=self.reason_log,
-                    trace=self.trace,
-                )
+                await self._run_distill(status=d.status, answer=d.answer)
                 return {"status": d.status, "answer": d.answer}
             except Exception as e:
                 obs = f"ERROR: {e}"
@@ -584,6 +596,7 @@ class ReactLoop:
                     reason_log=self.reason_log,
                 )
                 self.trace.write({"type": "done", "payload": result})
+                await self._run_distill(status=result["status"], answer=result["answer"])
                 return result
 
             if name == "goto" and obs_str.startswith("ERROR: blocked goto"):

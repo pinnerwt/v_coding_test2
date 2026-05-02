@@ -234,3 +234,192 @@ async def test_distill_failure_does_not_corrupt_result(tmp_path):
     # Trace contains a distill_failed event.
     events = [json.loads(line) for line in trace_path.read_text().splitlines() if line.strip()]
     assert any(e["type"] == "distill_failed" for e in events)
+
+
+# --- Force-done distillation tests ---
+#
+# Distillation must run after EVERY done() — including the synthetic done()
+# produced by `coerce_done_via_llm` on the force-done paths. The natural
+# LoopDone handler in run() already distills; these tests pin the same
+# behavior on the five force-done sites so failure-mode page knowledge
+# (Cloudflare walls, CAPTCHAs, dead-ends) is captured.
+
+
+@pytest.mark.asyncio
+async def test_distill_runs_after_max_steps_force_done(tmp_path):
+    """max_steps trigger: with max_steps=2, step 0 runs a tool, step 1 (the
+    final allowed step) short-circuits to coerce_done_via_llm. Distillation
+    must fire on the synthesized done(...) result."""
+    notes = NotesStore(tmp_path / "n.db")
+    notes.set("https://x.test/", "stale prior content")
+    browser = _StubBrowser("page body")
+    transport = _scripted_transport(
+        [
+            # Step 0: regular tool call.
+            ("read", {"offset": 0, "thought": "look"}),
+            # Step 1 = max_steps - 1: coerce_done_via_llm forces done().
+            ("done", {"status": "failed", "answer": "ran out of steps"}),
+        ],
+        distill_text="- max-steps distilled fact",
+    )
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=notes, current_url=lambda: browser.page.url, question_channel=qc)
+    reg.register(_build_read_tool(browser))
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                    "answer": {"type": "string"},
+                },
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=notes,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=2,
+    )
+    result = await loop.run("what is the value")
+    assert result == {"status": "failed", "answer": "ran out of steps"}
+    out = notes.get("https://x.test/")
+    assert "max-steps distilled fact" in out
+    assert "stale prior content" not in out
+
+
+@pytest.mark.asyncio
+async def test_distill_runs_after_no_progress_force_done(tmp_path):
+    """no_progress trigger: alternating noopA/noopB with identical observations
+    drives no_progress_streak past NO_PROGRESS_GIVEUP. The force-done synthesis
+    must be followed by distillation."""
+    notes = NotesStore(tmp_path / "n.db")
+    browser = _StubBrowser("page body")
+
+    distill_payload = "- no-progress distilled fact"
+    call_idx = {"i": 0}
+
+    async def handler(request):
+        body = json.loads(request.content.decode())
+        has_tools = "tools" in body and body.get("tools")
+        if not has_tools:
+            # Distillation call (free-form, no tools).
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {"message": {"role": "assistant", "content": distill_payload}}
+                    ]
+                },
+            )
+        # Did force-done call coerce_done_via_llm? It pins tool_choice to
+        # the named done function. Use that as the discriminator.
+        tc = body.get("tool_choice")
+        if isinstance(tc, dict) and tc.get("function", {}).get("name") == "done":
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "c1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "done",
+                                            "arguments": json.dumps(
+                                                {
+                                                    "status": "failed",
+                                                    "answer": "stuck",
+                                                }
+                                            ),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                },
+            )
+        # Regular tool-loop turn: alternate noopA/noopB to defeat
+        # _last_three_match while still keeping observations identical.
+        name = "noopA" if call_idx["i"] % 2 == 0 else "noopB"
+        call_idx["i"] += 1
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "c1",
+                                    "type": "function",
+                                    "function": {"name": name, "arguments": "{}"},
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=notes, current_url=lambda: browser.page.url, question_channel=qc)
+
+    async def noopA():
+        return "same"
+
+    async def noopB():
+        return "same"
+
+    reg.register(Tool("noopA", "x", {"type": "object", "properties": {}}, noopA))
+    reg.register(Tool("noopB", "x", {"type": "object", "properties": {}}, noopB))
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                    "answer": {"type": "string"},
+                },
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=notes,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=30,
+    )
+    result = await loop.run("g")
+    assert result == {"status": "failed", "answer": "stuck"}
+    out = notes.get("https://x.test/")
+    assert "no-progress distilled fact" in out
