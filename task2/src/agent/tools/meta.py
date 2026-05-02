@@ -44,11 +44,6 @@ def build_meta_tools(
     question_channel: QuestionChannel,
     reason_log: list[str] | None = None,
 ) -> dict:
-    async def note(text: str) -> str:
-        if notes is not None:
-            notes.append(current_url(), text)
-        return "noted"
-
     async def ask_user_question(question: str) -> str:
         ans = await question_channel.ask(question)
         return f"user said: {ans}"
@@ -62,7 +57,6 @@ def build_meta_tools(
         return "noted"
 
     return {
-        "note": note,
         "ask_user_question": ask_user_question,
         "done": done,
         "reason": reason,
@@ -96,19 +90,6 @@ def build_meta_tool_list(
                 "required": ["text"],
             },
             fns["reason"],
-        ),
-        Tool(
-            "note",
-            "Save a short note about the current URL for future runs.",
-            {
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string"},
-                    "thought": {"type": "string"},
-                },
-                "required": ["text"],
-            },
-            fns["note"],
         ),
         Tool(
             "ask_user_question",

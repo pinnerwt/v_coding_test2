@@ -17,16 +17,15 @@ async def test_done_raises_with_payload():
 
 
 @pytest.mark.asyncio
-async def test_note_appends(tmp_path):
-    notes = NotesStore(tmp_path / "n.db")
+async def test_note_tool_is_not_in_registry():
     tools = build_meta_tools(
-        notes=notes,
-        current_url=lambda: "https://a.test/",
+        notes=None,
+        current_url=lambda: "x",
         question_channel=QuestionChannel(),
+        reason_log=[],
     )
-    out = await tools["note"](text="learned X")
-    assert out == "noted"
-    assert "learned X" in notes.get("https://a.test/")
+    assert "note" not in tools
+    assert "reason" in tools
 
 
 @pytest.mark.asyncio

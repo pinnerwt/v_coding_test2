@@ -37,7 +37,7 @@ _SYSTEM = (
 _REPLAN_HINT = (
     "REPLAN: You repeated the same action 3 times with the same observation. "
     "Re-read URL notes and pick a DIFFERENT action this turn — different element, "
-    "navigate elsewhere, call note() to record the failure, or ask_user_question."
+    "navigate elsewhere, call reason() to record the failure, or ask_user_question."
 )
 
 # Force a done(failed) when the agent produces this many consecutive
