@@ -89,3 +89,12 @@ async def test_goto_blocked_when_url_not_in_goal_or_tape(tmp_path, monkeypatch):
         ):
             blocked = True
     assert blocked, "expected a blocked-goto step in trace"
+
+    # Also expect a distinct goto_blocked event for bench/UI scoring
+    saw_event = False
+    for line in traces[0].read_text().splitlines():
+        ev = json.loads(line)
+        if ev.get("type") == "goto_blocked":
+            assert ev["payload"]["url"] == "https://arxiv.org/abs/1406.2661"
+            saw_event = True
+    assert saw_event, "expected a goto_blocked trace event"
