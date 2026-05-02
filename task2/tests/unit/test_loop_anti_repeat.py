@@ -309,3 +309,116 @@ async def test_small_diff_injected_after_state_change(tmp_path):
     second_prompt = captured_user_prompts[1]
     assert "Page changes since last turn" in second_prompt
     assert "Sort: Params" in second_prompt
+
+
+@pytest.mark.asyncio
+async def test_press_key_hidden_when_no_global_diff(tmp_path):
+    text = "static text only\n"
+    browser = _StubBrowser(text)
+
+    captured_tools: list[list[str]] = []
+
+    async def handler(request):
+        body = json.loads(request.content.decode())
+        captured_tools.append([t["function"]["name"] for t in body.get("tools", [])])
+        idx = len(captured_tools) - 1
+        if idx == 0:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "c1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "press_key",
+                                            "arguments": json.dumps({"key": "Home"}),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "c1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "done",
+                                        "arguments": json.dumps(
+                                            {"status": "success", "answer": "ok"}
+                                        ),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+
+    async def press_key(key: str, thought: str = ""):
+        return f"pressed {key}"  # does not mutate browser text
+
+    reg.register(
+        Tool(
+            "press_key",
+            "press",
+            {
+                "type": "object",
+                "properties": {"key": {"type": "string"}, "thought": {"type": "string"}},
+                "required": ["key"],
+            },
+            press_key,
+        )
+    )
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=5,
+    )
+    await loop.run("anything")
+
+    # Turn 0: press_key was available. Turn 1: press_key must be hidden because
+    # its previous call produced zero global diff.
+    assert "press_key" in captured_tools[0]
+    assert "press_key" not in captured_tools[1]

@@ -172,6 +172,13 @@ class ReactLoop:
                     self.read_cache.clear()
                     self.list_interactive_cache.clear()
                     self._hidden_tools.clear()
+                # If the previous step was press_key and the page didn't change, hide it.
+                if (
+                    self.tape
+                    and self.tape[-1]["action"] == "press_key"
+                    and prev_text == current_text
+                ):
+                    self._hidden_tools.add("press_key")
             self.global_cache.update(current_text)
 
             tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
