@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import uuid
 from datetime import UTC, datetime
@@ -145,6 +146,30 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                 "events": events,
             },
         )
+
+    @app.get("/api/sessions")
+    async def list_sessions():
+        traces_dir = data_dir / "traces"
+        if not traces_dir.exists():
+            return []
+        out = []
+        for p in sorted(traces_dir.glob("*.jsonl"), reverse=True):
+            sid = p.stem
+            goal = ""
+            started_at = ""
+            status = "running"
+            for line in p.read_text().splitlines():
+                try:
+                    ev = json.loads(line)
+                except Exception:
+                    continue
+                if ev.get("type") == "session_started":
+                    goal = ev["payload"].get("goal", "")
+                    started_at = ev["payload"].get("started_at", "")
+                elif ev.get("type") == "done":
+                    status = ev["payload"].get("status", status)
+            out.append({"sid": sid, "goal": goal, "started_at": started_at, "status": status})
+        return out
 
     @app.post("/api/run_sync")
     async def run_sync(payload: dict):
