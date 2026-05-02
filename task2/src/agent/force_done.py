@@ -22,6 +22,37 @@ def _placeholder(trigger: Trigger, n_no_progress: int | None) -> str:
     return template
 
 
+_FORCE_DONE_PROMPTS: dict[Trigger, str] = {
+    "max_steps": (
+        "This is your final allowed step. Commit done() now with the best "
+        "answer your prior reads support. If your reads contained the answer, "
+        'use done(success, "<answer>"); otherwise done(failed, "<one-line '
+        'reason>").'
+    ),
+    "no_progress": (
+        "You have produced no novel observation for {n} consecutive steps. "
+        "Either the goal is unreachable from this browser (commit "
+        'done(failed, "blocked by <wall>") if you saw a Cloudflare/CAPTCHA/'
+        'login wall, or done(failed, "<reason>") otherwise) or you already '
+        'have the answer (commit done(success, "<answer>") with the rendered '
+        "value from your reads — even if the page does not name the asked "
+        "phrase verbatim)."
+    ),
+    "asked_after_clarification": (
+        "User clarification did not unblock you. Commit "
+        'done(failed, "<closest answer you have>") rather than retrying the '
+        "same action."
+    ),
+}
+
+
+def _instruction(trigger: Trigger, n_no_progress: int | None) -> str:
+    template = _FORCE_DONE_PROMPTS[trigger]
+    if trigger == "no_progress":
+        return template.format(n=n_no_progress if n_no_progress is not None else "?")
+    return template
+
+
 async def coerce_done_via_llm(
     *,
     llm: LLMClient,
@@ -48,6 +79,7 @@ async def coerce_done_via_llm(
         page_header=page_header,
         replan_hint=None,
     )
+    messages.append({"role": "user", "content": _instruction(trigger, n_no_progress)})
     msg, _usage = await llm.chat(
         messages,
         tools=[done_tool_schema],
