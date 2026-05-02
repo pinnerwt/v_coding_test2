@@ -10,3 +10,9 @@ Can you look into this case: Go to https://arxiv.org and Find the year when the 
 1. One pass first. 2. last failed cases = only the most recent bench-run's failures. 3. Claude read the whole process and determine it. 4. replaced each pass. 5. Run only one of the failed cases. Only move on when current case is fixed or if I say so. 6. P0: wrong results. P1: latency/performance improvement P2: nice to have features. 7. Just produce findings. We will discuss them later. 8. in project.
 
 read grep: read_grep was added for medal list where people are listed from 16xx , and that we are looking for 2018. The read was too slow and so I wanted to let llm to learn that they are showing in chronological order and read_grep the 2018 directly. From this perspective, how can we handle it so that it won't guess the answer for wolfram test case?
+
+I'm more aware of Terminal read(offset=0) loop. When we remove read from the list, can we force it at LLM level like what we have done for last step "done"?
+
+Make sure that deepseek does not mask ungiven tool names at server side. In that case, we might want to enforce the prompt/post verification on agent side.
+
+/superpowers:brainstorming the note did help for longer memory after K = 8 turns of actions. But the memory right now is more "local" which means that it is task specific but not page specific. What do you think? I think we need both: "reason" for in-session scratchpad and "note" for page knowledge. I think we should run "note" everytime we finished a job, and "reason" during the task session.
