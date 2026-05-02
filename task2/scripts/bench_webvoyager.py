@@ -22,8 +22,27 @@ DATA = ROOT / "eval" / "webvoyager_tier1.json"
 OUT_DIR = ROOT / "data" / "bench"
 
 
-async def run_one(client: httpx.AsyncClient, case: dict, timeout_s: float) -> dict:
+def _count_blocks(data_dir: Path, since_ts: float) -> int:
+    traces_dir = data_dir / "traces"
+    if not traces_dir.exists():
+        return 0
+    candidates = [p for p in traces_dir.glob("*.jsonl") if p.stat().st_mtime >= since_ts]
+    if not candidates:
+        return 0
+    newest = max(candidates, key=lambda p: p.stat().st_mtime)
+    n = 0
+    for line in newest.read_text().splitlines():
+        try:
+            if json.loads(line).get("type") == "goto_blocked":
+                n += 1
+        except Exception:
+            pass
+    return n
+
+
+async def run_one(client: httpx.AsyncClient, case: dict, timeout_s: float, data_dir: Path) -> dict:
     goal = f"Go to {case['web']} and {case['ques']}"
+    t0_wall = time.time()
     t0 = time.monotonic()
     try:
         r = await client.post(
@@ -32,6 +51,7 @@ async def run_one(client: httpx.AsyncClient, case: dict, timeout_s: float) -> di
             timeout=httpx.Timeout(timeout_s, connect=5.0),
         )
         elapsed_ms = int((time.monotonic() - t0) * 1000)
+        blocks = _count_blocks(data_dir, t0_wall)
         if r.status_code != 200:
             return {
                 "id": case["id"],
@@ -39,6 +59,7 @@ async def run_one(client: httpx.AsyncClient, case: dict, timeout_s: float) -> di
                 "status": "http_error",
                 "http": r.status_code,
                 "elapsed_ms": elapsed_ms,
+                "blocks": blocks,
             }
         body = r.json()
         return {
@@ -48,6 +69,7 @@ async def run_one(client: httpx.AsyncClient, case: dict, timeout_s: float) -> di
             "answer": (body.get("answer") or "")[:200],
             "steps": body.get("steps"),
             "elapsed_ms": elapsed_ms,
+            "blocks": blocks,
         }
     except (httpx.ReadTimeout, httpx.ConnectTimeout):
         return {
@@ -55,6 +77,7 @@ async def run_one(client: httpx.AsyncClient, case: dict, timeout_s: float) -> di
             "web": case["web_name"],
             "status": "timeout",
             "elapsed_ms": int((time.monotonic() - t0) * 1000),
+            "blocks": _count_blocks(data_dir, t0_wall),
         }
 
 
@@ -86,12 +109,13 @@ async def main():
     async with httpx.AsyncClient(base_url=args.base_url) as c:
         for case in cases:
             print(f"[bench] {case['id']} {case['web_name']} …", flush=True)
-            r = await run_one(c, case, args.timeout)
+            r = await run_one(c, case, args.timeout, ROOT / "data")
             results.append(r)
             steps = r.get("steps")
             steps_str = f"{steps:>3}" if isinstance(steps, int) else "  ?"
+            blocks = r.get("blocks", 0)
             print(
-                f"  -> {r['status']:>12}  steps={steps_str}  "
+                f"  -> {r['status']:>12}  steps={steps_str}  blocks={blocks}  "
                 f"{r['elapsed_ms']:>6}ms  {(r.get('answer') or '')[:80]}",
                 flush=True,
             )
