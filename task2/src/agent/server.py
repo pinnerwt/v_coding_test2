@@ -20,7 +20,6 @@ from agent.config import Config
 from agent.llm import LLMClient
 from agent.loop import ReactLoop
 from agent.notes_store import NotesStore
-from agent.summarizer import Summarizer
 from agent.tools.browser import build_browser_tool_list
 from agent.tools.meta import QuestionChannel, build_meta_tool_list
 from agent.tools.registry import ToolRegistry
@@ -70,13 +69,6 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                     api_key=cfg.agent_api_key,
                     transport=llm_transport,
                 )
-                summ_llm = LLMClient(
-                    cfg.summarizer_model_base_url,
-                    cfg.summarizer_model_name,
-                    api_key=cfg.summarizer_api_key,
-                    transport=llm_transport,
-                )
-                summarizer = Summarizer(summ_llm, notes)
                 reg = ToolRegistry()
                 loop_holder: list = []
                 reason_log: list[str] = []
@@ -119,7 +111,6 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                         llm=agent_llm,
                         registry=reg,
                         notes=notes,
-                        summarizer=summarizer,
                         trace=trace,
                         browser=browser,
                         question_channel=qc,

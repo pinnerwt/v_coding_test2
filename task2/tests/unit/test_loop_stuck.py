@@ -67,7 +67,6 @@ async def test_replan_hint_after_3_repeats(tmp_path):
         llm=llm,
         registry=reg,
         notes=None,
-        summarizer=None,
         trace=trace,
         browser=_Browser(),
         question_channel=qc,

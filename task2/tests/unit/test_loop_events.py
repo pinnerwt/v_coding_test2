@@ -75,7 +75,6 @@ async def test_loop_emits_usage_and_llm_call_start():
         llm=llm,
         registry=reg,
         notes=None,
-        summarizer=None,
         trace=trace,
         browser=_FakeBrowser(),
         question_channel=QuestionChannel(),

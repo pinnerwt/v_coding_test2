@@ -123,7 +123,6 @@ async def test_canirun_no_read_loop(tmp_path):
         llm=llm,
         registry=reg,
         notes=None,
-        summarizer=None,
         trace=trace,
         browser=browser,
         question_channel=qc,

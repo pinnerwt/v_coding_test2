@@ -82,6 +82,7 @@ async def coerce_done_via_llm(
     trigger: Trigger,
     n_no_progress: int | None,
     done_tool_schema: dict[str, Any],
+    reason_log: list[str] | None = None,
 ) -> dict[str, Any]:
     """One-shot LLM call constrained to emit done(...). Returns
     {"status": ..., "answer": ...}. On transport-level deviation
@@ -95,6 +96,7 @@ async def coerce_done_via_llm(
         tape=tape,
         page_header=page_header,
         replan_hint=None,
+        reason_log=reason_log,
     )
     messages.append({"role": "user", "content": _instruction(trigger, n_no_progress)})
     messages.append({"role": "user", "content": _read_content_dump(tape)})

@@ -281,6 +281,31 @@ async def test_coerce_done_falls_back_on_wrong_tool_name():
 
 
 @pytest.mark.asyncio
+async def test_coerce_done_forwards_reason_log_into_messages():
+    """The forced-done call must surface the agent's reason() entries to the
+    LLM so the commit answer is informed by the same scratchpad as a normal
+    turn."""
+    llm, captured = _capturing_llm()
+    await coerce_done_via_llm(
+        llm=llm,
+        tape=[],
+        goal="g",
+        qa=[],
+        url="https://x.test/",
+        url_notes="",
+        page_header="URL=https://x.test/",
+        trigger="max_steps",
+        n_no_progress=None,
+        done_tool_schema=_DONE_TOOL_SCHEMA,
+        reason_log=["picked id=42 because it's the only Submit button"],
+    )
+    user_msgs = [m["content"] for m in captured["payload"]["messages"] if m["role"] == "user"]
+    combined = "\n".join(user_msgs)
+    assert "picked id=42" in combined
+    assert "Reasoning so far:" in combined
+
+
+@pytest.mark.asyncio
 async def test_coerce_done_no_progress_placeholder_interpolates_n():
     async def handler(request):
         return httpx.Response(

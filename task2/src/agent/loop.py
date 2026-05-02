@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from agent.context import NOVELTY_WINDOW, _obs_fingerprint, build_messages
+from agent.distill import distill_page_knowledge
 from agent.force_done import coerce_done_via_llm
 from agent.llm import LLMClient, ToolNameNotAllowed
 from agent.page_diff import (
@@ -97,7 +98,6 @@ class ReactLoop:
         llm: LLMClient,
         registry: ToolRegistry,
         notes,
-        summarizer,
         trace: TraceWriter,
         browser,
         question_channel: QuestionChannel,
@@ -111,7 +111,6 @@ class ReactLoop:
         self.llm = llm
         self.registry = registry
         self.notes = notes
-        self.summarizer = summarizer
         self.trace = trace
         self.browser = browser
         self.qc = question_channel
@@ -187,6 +186,7 @@ class ReactLoop:
                     trigger="max_steps",
                     n_no_progress=None,
                     done_tool_schema=self._done_tool_schema(),
+                    reason_log=self.reason_log,
                 )
                 self.trace.write({"type": "done", "payload": result})
                 return result
@@ -300,6 +300,7 @@ class ReactLoop:
                         trigger="no_progress",
                         n_no_progress=self.no_progress_streak,
                         done_tool_schema=self._done_tool_schema(),
+                        reason_log=self.reason_log,
                     )
                     self.trace.write({"type": "done", "payload": result})
                     return result
@@ -343,6 +344,7 @@ class ReactLoop:
                     trigger="asked_after_clarification",
                     n_no_progress=None,
                     done_tool_schema=self._done_tool_schema(),
+                    reason_log=self.reason_log,
                 )
                 self.trace.write({"type": "done", "payload": result})
                 return result
@@ -477,6 +479,7 @@ class ReactLoop:
                             trigger="no_progress",
                             n_no_progress=self.no_progress_streak,
                             done_tool_schema=self._done_tool_schema(),
+                            reason_log=self.reason_log,
                         )
                         self.trace.write({"type": "done", "payload": result})
                         return result
@@ -522,19 +525,22 @@ class ReactLoop:
                         },
                     }
                 )
-                if d.status == "failed" and self.summarizer is not None and url:
-                    existing = self.notes.get(url) if self.notes else ""
-                    await self.summarizer.maybe_summarize(
-                        trigger="failed",
-                        prior_url=url,
-                        tape_slice=self.tape[-5:],
-                        existing_notes=existing,
-                    )
                 self.trace.write(
                     {
                         "type": "done",
                         "payload": {"status": d.status, "answer": d.answer},
                     }
+                )
+                await distill_page_knowledge(
+                    llm=self.llm,
+                    notes=self.notes,
+                    url=self._current_url(),
+                    goal=goal,
+                    status=d.status,
+                    answer=d.answer,
+                    tape=self.tape,
+                    reason_log=self.reason_log,
+                    trace=self.trace,
                 )
                 return {"status": d.status, "answer": d.answer}
             except Exception as e:
@@ -575,6 +581,7 @@ class ReactLoop:
                     trigger="no_progress",
                     n_no_progress=self.no_progress_streak,
                     done_tool_schema=self._done_tool_schema(),
+                    reason_log=self.reason_log,
                 )
                 self.trace.write({"type": "done", "payload": result})
                 return result
@@ -589,28 +596,6 @@ class ReactLoop:
                         },
                     }
                 )
-
-            if self.summarizer is not None:
-                trigger = None
-                if name == "goto":
-                    trigger = "goto"
-                elif obs_str.startswith("ERROR:"):
-                    trigger = "error"
-                if trigger is not None and url:
-                    existing = self.notes.get(url) if self.notes else ""
-                    try:
-                        await self.summarizer.maybe_summarize(
-                            trigger=trigger,
-                            prior_url=url,
-                            tape_slice=self.tape[-5:],
-                            existing_notes=existing,
-                        )
-                    except Exception as e:
-                        # Summarizer is best-effort URL-note generation; a transient
-                        # LLM timeout or network blip must not abort the agent loop.
-                        self.trace.write(
-                            {"type": "summarizer_error", "payload": {"error": str(e)[:200]}}
-                        )
 
             if state == "none" and (self._last_three_match() or self._no_progress()):
                 state = "hinted"
