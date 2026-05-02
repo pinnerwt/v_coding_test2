@@ -37,14 +37,32 @@ works without explicit state.
 
 ## Prerequisites
 
-Before doing anything else, verify all of these:
+Before doing anything else:
 
-1. `task2/data/bench/` contains at least one `webvoyager_*.json`. If
-   not, abort with: `No prior bench results. Run: cd task2 && uv run python scripts/bench_webvoyager.py --limit 12`
-2. The agent server responds at `http://127.0.0.1:8001/health` with
-   200. If not, abort with: `Agent server not running. Start it: cd task2 && AGENT_RESTRICT_GOTO=true uv run uvicorn agent.server:app --port 8001`
+1. Verify `task2/data/bench/` contains at least one
+   `webvoyager_*.json`. If not, abort with: `No prior bench results. Run: cd task2 && uv run python scripts/bench_webvoyager.py --limit 12`
 
-Run both checks via Bash before any other tool call.
+2. **Restart the agent server.** Always restart for a clean slate,
+   regardless of whether it is currently running. Three Bash calls:
+
+   a) Kill any existing process on port 8001:
+      ```bash
+      lsof -ti :8001 | xargs -r kill -9 2>/dev/null; sleep 1; true
+      ```
+
+   b) Start the server (use Bash with `run_in_background: true`):
+      ```bash
+      cd /home/pgi/v_coding_test2/task2 && set -a && . ./.env && set +a && AGENT_RESTRICT_GOTO=true uv run uvicorn agent.server:app_factory --factory --host 127.0.0.1 --port 8001
+      ```
+
+   c) Wait for `/health` to return 200 (poll up to 60s):
+      ```bash
+      until curl -sf http://127.0.0.1:8001/api/sessions > /dev/null; do sleep 2; done
+      ```
+
+   If health does not come up within ~60s, abort with: `Agent server failed to start. Read the background bash output for the uvicorn log.` Do not proceed.
+
+Run these checks via Bash before any other tool call.
 
 ## Procedure
 
