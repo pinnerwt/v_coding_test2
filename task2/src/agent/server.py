@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,26 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
             session_id = uuid.uuid4().hex
             (data_dir / "traces").mkdir(parents=True, exist_ok=True)
             trace = TraceWriter(data_dir / "traces" / f"{session_id}.jsonl")
+
+            orig_write = trace.write
+
+            def write_and_send(ev):
+                orig_write(ev)
+                asyncio.create_task(send_event(ev))
+
+            trace.write = write_and_send  # type: ignore[assignment]
+
+            trace.write(
+                {
+                    "type": "session_started",
+                    "payload": {
+                        "sid": session_id,
+                        "goal": goal,
+                        "started_at": datetime.now(UTC).isoformat(),
+                    },
+                }
+            )
+
             browser = BrowserSession()
             await browser.start()
             try:
@@ -60,14 +81,6 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                     question_channel=qc,
                 ):
                     reg.register(t)
-
-                orig_write = trace.write
-
-                def write_and_send(ev):
-                    orig_write(ev)
-                    asyncio.create_task(send_event(ev))
-
-                trace.write = write_and_send  # type: ignore[assignment]
 
                 async def question_pump():
                     while True:

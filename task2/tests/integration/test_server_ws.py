@@ -39,6 +39,27 @@ def _llm_mock_done(answer="ok"):
 
 
 @pytest.mark.asyncio
+async def test_session_started_persisted_first(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAX_STEPS", "5")
+    app = build_app(cfg=Config.from_env(), data_dir=tmp_path, llm_transport=_llm_mock_done("ok"))
+    from httpx import ASGITransport, AsyncClient
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        r = await ac.post("/api/run_sync", json={"goal": "buy soap"})
+        assert r.status_code == 200
+
+    traces = sorted((tmp_path / "traces").glob("*.jsonl"))
+    assert len(traces) == 1
+    first_line = traces[0].read_text().splitlines()[0]
+    ev = json.loads(first_line)
+    assert ev["type"] == "session_started"
+    assert ev["payload"]["goal"] == "buy soap"
+    assert "sid" in ev["payload"]
+    assert "started_at" in ev["payload"]
+
+
+@pytest.mark.asyncio
 async def test_ws_streams_done(tmp_path, monkeypatch):
     monkeypatch.setenv("MAX_STEPS", "5")
     app = build_app(cfg=Config.from_env(), data_dir=tmp_path, llm_transport=_llm_mock_done("42"))
