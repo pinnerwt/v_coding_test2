@@ -42,6 +42,7 @@ def build_meta_tools(
     notes: NotesStore | None,
     current_url: Callable[[], str],
     question_channel: QuestionChannel,
+    reason_log: list[str] | None = None,
 ) -> dict:
     async def note(text: str) -> str:
         if notes is not None:
@@ -55,7 +56,17 @@ def build_meta_tools(
     async def done(status: str, answer: str) -> str:
         raise LoopDone(status, answer)
 
-    return {"note": note, "ask_user_question": ask_user_question, "done": done}
+    async def reason(text: str) -> str:
+        if reason_log is not None:
+            reason_log.append(text)
+        return "noted"
+
+    return {
+        "note": note,
+        "ask_user_question": ask_user_question,
+        "done": done,
+        "reason": reason,
+    }
 
 
 def build_meta_tool_list(
@@ -63,9 +74,29 @@ def build_meta_tool_list(
     notes: NotesStore | None,
     current_url: Callable[[], str],
     question_channel: QuestionChannel,
+    reason_log: list[str] | None = None,
 ) -> list[Tool]:
-    fns = build_meta_tools(notes=notes, current_url=current_url, question_channel=question_channel)
+    fns = build_meta_tools(
+        notes=notes,
+        current_url=current_url,
+        question_channel=question_channel,
+        reason_log=reason_log,
+    )
     return [
+        Tool(
+            "reason",
+            "Record a short thought you want to remember past the rolling action "
+            "window. In-session only — does not persist.",
+            {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "thought": {"type": "string"},
+                },
+                "required": ["text"],
+            },
+            fns["reason"],
+        ),
         Tool(
             "note",
             "Save a short note about the current URL for future runs.",

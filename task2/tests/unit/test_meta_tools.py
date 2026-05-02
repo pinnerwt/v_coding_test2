@@ -39,3 +39,31 @@ async def test_ask_user_question_blocks_until_answered():
     ch.answer("M")
     result = await task
     assert result == "user said: M"
+
+
+@pytest.mark.asyncio
+async def test_reason_appends_to_session_log():
+    log: list[str] = []
+    tools = build_meta_tools(
+        notes=None,
+        current_url=lambda: "x",
+        question_channel=QuestionChannel(),
+        reason_log=log,
+    )
+    out = await tools["reason"](text="GPU dropdown id=94")
+    assert out == "noted"
+    assert log == ["GPU dropdown id=94"]
+
+
+@pytest.mark.asyncio
+async def test_reason_does_not_touch_notes_store(tmp_path):
+    notes = NotesStore(tmp_path / "n.db")
+    log: list[str] = []
+    tools = build_meta_tools(
+        notes=notes,
+        current_url=lambda: "https://a.test/",
+        question_channel=QuestionChannel(),
+        reason_log=log,
+    )
+    await tools["reason"](text="ephemeral")
+    assert notes.get("https://a.test/") == ""
