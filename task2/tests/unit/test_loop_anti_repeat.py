@@ -563,3 +563,75 @@ async def test_list_interactive_auto_advance_handles_tool_error(tmp_path):
     assert loop.tape[0]["action"] == "list_interactive"
     assert loop.tape[0]["obs"].startswith("ERROR:")
     assert result["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_read_grep_dedup_returns_synthetic_when_pattern_repeats(tmp_path):
+    text = "the quick brown fox jumps over the lazy dog needle here\n"
+    browser = _StubBrowser(text)
+
+    async def read_grep(pattern: str, window: int = 200, thought: str = ""):
+        body = await browser.page.evaluate("document.body.innerText")
+        idx = body.lower().find(pattern.lower())
+        if idx < 0:
+            return f"NOT FOUND: {pattern!r}"
+        return body[max(0, idx - window) : idx + len(pattern) + window]
+
+    transport = _mock_llm_calls(
+        [
+            ("read_grep", {"pattern": "needle", "thought": "first grep"}),
+            ("read_grep", {"pattern": "needle", "thought": "same pattern again"}),
+            ("done", {"status": "success", "answer": "ok"}),
+        ]
+    )
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(notes=None, current_url=lambda: "https://x.test/", question_channel=qc)
+    reg.register(
+        Tool(
+            "read_grep",
+            "rg",
+            {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string"},
+                    "window": {"type": "integer"},
+                    "thought": {"type": "string"},
+                },
+                "required": ["pattern"],
+            },
+            read_grep,
+        )
+    )
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                    "answer": {"type": "string"},
+                },
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        summarizer=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=5,
+    )
+    await loop.run("anything")
+
+    step1 = loop.tape[1]
+    assert step1["action"] == "read_grep"
+    assert "already searched" in step1["obs"].lower()

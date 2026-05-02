@@ -114,6 +114,7 @@ class ReactLoop:
         self.global_cache = GlobalTextCache()
         self._small_diff_threshold = 500
         self._diff_inject_max_lines = 10
+        self._read_grep_seen: dict[str, int] = {}
 
     def _current_url(self) -> str:
         try:
@@ -172,6 +173,7 @@ class ReactLoop:
                     self.read_cache.clear()
                     self.list_interactive_cache.clear()
                     self._hidden_tools.clear()
+                    self._read_grep_seen.clear()
                 # If the previous step was press_key and the page didn't change, hide it.
                 if (
                     self.tape
@@ -232,6 +234,16 @@ class ReactLoop:
                     "answer": "stuck after user clarification",
                 }
                 state = "giveup"
+
+            read_grep_synthetic: str | None = None
+            if name == "read_grep" and isinstance(args, dict):
+                pat = (args.get("pattern", "") or "").lower()
+                if pat and pat in self._read_grep_seen:
+                    prior_step = self._read_grep_seen[pat]
+                    read_grep_synthetic = (
+                        f'(pattern "{args.get("pattern", "")}" already searched at '
+                        f"step {prior_step}, no new matches.)"
+                    )
 
             grounding_block: str | None = None
             if name == "read_grep" and isinstance(args, dict):
@@ -347,7 +359,9 @@ class ReactLoop:
                     )
 
             try:
-                if obs_override is not None:
+                if read_grep_synthetic is not None:
+                    obs = read_grep_synthetic
+                elif obs_override is not None:
                     obs = obs_override
                 elif grounding_block is not None:
                     obs = grounding_block
@@ -355,6 +369,15 @@ class ReactLoop:
                     obs = await self.registry.call(name, args)
                     if auto_advance_prefix is not None and isinstance(obs, str):
                         obs = f"{auto_advance_prefix} {obs}"
+                if (
+                    name == "read_grep"
+                    and read_grep_synthetic is None
+                    and isinstance(obs, str)
+                    and not obs.startswith("NOT FOUND:")
+                ):
+                    pat = (args.get("pattern", "") or "").lower()
+                    if pat:
+                        self._read_grep_seen[pat] = step_idx
             except LoopDone as d:
                 self.trace.write(
                     {
