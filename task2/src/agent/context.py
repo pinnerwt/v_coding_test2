@@ -7,7 +7,8 @@ K_RECENT = 8
 
 
 def _short(action: str, args: dict, obs: str) -> str:
-    obs1 = (obs or "").splitlines()[0][:120]
+    lines = (obs or "").splitlines()
+    obs1 = lines[0][:120] if lines else ""
     return f"{action}({json.dumps(args, ensure_ascii=False)[:80]}) -> {obs1}"
 
 
