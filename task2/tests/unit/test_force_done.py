@@ -236,3 +236,72 @@ async def test_coerce_done_truncates_long_read_obs():
     combined = "\n".join(user_msgs)
     assert "X" * 800 in combined
     assert "X" * 801 not in combined
+
+
+@pytest.mark.asyncio
+async def test_coerce_done_falls_back_on_empty_tool_calls():
+    async def handler(request):
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"role": "assistant", "content": "no tool"}}]},
+        )
+
+    llm = LLMClient("http://t/v1", "m", transport=httpx.MockTransport(handler))
+    result = await coerce_done_via_llm(
+        llm=llm,
+        tape=[],
+        goal="g",
+        qa=[],
+        url="https://x.test/",
+        url_notes="",
+        page_header="URL=https://x.test/",
+        trigger="max_steps",
+        n_no_progress=None,
+        done_tool_schema=_DONE_TOOL_SCHEMA,
+    )
+    assert result == {"status": "failed", "answer": "max steps"}
+
+
+@pytest.mark.asyncio
+async def test_coerce_done_falls_back_on_wrong_tool_name():
+    llm = _llm_returning("read", {"offset": 0})
+    result = await coerce_done_via_llm(
+        llm=llm,
+        tape=[],
+        goal="g",
+        qa=[],
+        url="https://x.test/",
+        url_notes="",
+        page_header="URL=https://x.test/",
+        trigger="asked_after_clarification",
+        n_no_progress=None,
+        done_tool_schema=_DONE_TOOL_SCHEMA,
+    )
+    assert result == {"status": "failed", "answer": "stuck after user clarification"}
+
+
+@pytest.mark.asyncio
+async def test_coerce_done_no_progress_placeholder_interpolates_n():
+    async def handler(request):
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"role": "assistant", "content": "x"}}]},
+        )
+
+    llm = LLMClient("http://t/v1", "m", transport=httpx.MockTransport(handler))
+    result = await coerce_done_via_llm(
+        llm=llm,
+        tape=[],
+        goal="g",
+        qa=[],
+        url="https://x.test/",
+        url_notes="",
+        page_header="URL=https://x.test/",
+        trigger="no_progress",
+        n_no_progress=14,
+        done_tool_schema=_DONE_TOOL_SCHEMA,
+    )
+    assert result == {
+        "status": "failed",
+        "answer": "stuck: no novel observation for 14 consecutive steps",
+    }
