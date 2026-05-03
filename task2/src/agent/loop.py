@@ -50,8 +50,16 @@ Element IDs come from `list_interactive` — never invent CSS selectors or guess
 element IDs from prior knowledge.
 
 ## Stopping rules
-- Call `done(status="success", answer="<answer>", reason="...")` as soon as you
-  have the answer. Do not keep exploring after you have it.
+- Call `done(status="success", answer="<answer>", evidence="<verbatim
+  substring>", reason="...")` as soon as you have the answer. The `evidence`
+  argument is REQUIRED on success — it must be a verbatim substring (≥10 chars)
+  copied from a prior `read` or `read_grep` observation that contains your
+  answer. Do not paraphrase, do not summarize, do not infer from prior
+  knowledge: the loop checks `evidence` against the actual tape and rejects
+  fabricated citations (success is downgraded to failed). If you cannot point
+  to a substring in your reads that contains the answer, you do not yet have
+  the answer — read more of the page first. Do not keep exploring after you
+  have a grounded answer.
 - Call `done(status="failed", answer="<best partial>", reason="...")` when you
   have exhausted reasonable approaches.
 - Rendered-value caveat: if the goal asks for a value the page does not render
