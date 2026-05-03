@@ -47,3 +47,98 @@ uv run python scripts/cost_report.py --all
 3. Local qwen3.5-27b was slow and benchmarks took much longer than expected.
 4. ci/CLAUDE.md/function calls reused easily.
 5. Design pattern reused, while merging planner/loop into the same loop instance.
+
+# vici — AI Coding Test
+
+[![Python](https://img.shields.io/badge/python-3.11-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![uv](https://img.shields.io/badge/uv-0.9.3-261230?logo=python&logoColor=white)](https://github.com/astral-sh/uv)
+[![Ruff](https://img.shields.io/badge/ruff-0.14.14-D7FF64?logo=ruff&logoColor=000)](https://github.com/astral-sh/ruff)
+[![CI](https://img.shields.io/badge/CI-not%20configured-lightgrey)]()
+[![Dependabot](https://img.shields.io/badge/dependabot-not%20configured-lightgrey)]()
+[![Coverage](https://img.shields.io/badge/coverage-not%20configured-lightgrey)]()
+
+This repo is a second-pass attempt at the three tasks defined in [`AI-Coding-Test-EN.md`](AI-Coding-Test-EN.md) (Chinese: [`AI-Coding-Test-ZH.md`](AI-Coding-Test-ZH.md)). It deliberately drops the openspec/CI scaffolding from the [first trial](https://github.com/pinnerwt/v_coding_test) and focuses on success rate / latency / token usage of the task 2 agent. The whole repo is **test-driven**; see [`CLAUDE.md`](CLAUDE.md) for operating rules.
+
+## Tasks
+
+| #  | Title                                          | Status         | Where                  |
+|----|------------------------------------------------|----------------|------------------------|
+| 1  | GitHub CI/CD as Claude Skills                  | not started    | —                      |
+| 2  | Generalized Browser Automation Agent           | in progress    | [`task2/`](task2/)     |
+| 3  | SEC 10-K Item-level Structured Extraction      | not started    | —                      |
+
+Zeabur URL lands in `task2/README.md` once deployed.
+
+## Repository layout
+
+```
+.
+├── AI-Coding-Test-EN.md      # the brief
+├── CLAUDE.md                  # repo-wide operating rules (TDD, uv, ruff)
+├── README.md
+├── observations.md            # running notes from /bench-failure-triage
+├── docs/                      # design docs and plans
+├── prompts/                   # key prompts used to drive development
+└── task2/                     # browser automation agent (uv project)
+```
+
+## Quick start (task 2)
+
+```bash
+cd task2
+uv sync
+uv run playwright install chromium    # one-time post-install browser fetch
+uv run pytest                          # tests
+uv run ruff check . && uv run ruff format --check .
+set -a && . ./.env && set +a && \
+  AGENT_RESTRICT_GOTO=true \
+  uv run uvicorn agent.server:app_factory --factory --host 127.0.0.1 --port 8001
+```
+
+See [`task2/README.md`](task2/README.md) for env vars, Docker, Zeabur, and architecture notes.
+
+## Development workflow
+
+- **TDD is non-negotiable.** Red → green → refactor. Bug fixes start with a regression test. Eval sets count as tests for tasks 2 and 3. See [`CLAUDE.md`](CLAUDE.md).
+- **No openspec / no planner-loop split** — lessons from the first trial (see "Lesson from first trial" above). Plans live as plain markdown under `docs/plans/` and `prompts/`.
+- **Conventional commits** scoped by task: `feat(task2): ...`, `fix(task2): ...`, `test(task2): ...`, `docs(task2): ...`.
+- **Python:** `uv` for env / deps (`uv sync`, `uv add`, `uv run`), `ruff` for lint and format. Don't use `pip`, `poetry`, `venv`, `black`, or `flake8`.
+- **No `--no-verify`**, no mocking the LLM in LLM-contract tests, no weakening tests to pass.
+
+## CI/CD
+
+Not configured in this repo. The first trial used GitHub Actions (`task2-ci.yml`, `task2-benchmark.yml`); this trial intentionally skips CI to keep the iteration loop tight while the agent's success rate is still being tuned. Add a workflow under `.github/workflows/` if/when the agent stabilises.
+
+## Dependabot
+
+Not configured. The first trial had weekly `uv` + `github-actions` updates under `.github/dependabot.yml`; reintroduce when CI lands.
+
+## Test coverage
+
+Not measured by tooling. `pytest` is run locally without `--cov`; `pytest-cov` is not in the dev dependencies (`task2/pyproject.toml`). To opt in:
+
+```bash
+cd task2
+uv add --dev pytest-cov
+uv run pytest --cov=agent --cov-report=term --cov-report=xml
+```
+
+## Prompts
+
+The `prompts/` directory is the AI-collaboration record reviewers read:
+
+- [`prompts/task2.md`](prompts/task2.md) — the task 2 seed prompt and the resulting plan.
+
+## Deployment
+
+Each task is deployed as a public service on [Zeabur](https://zeabur.com/) per the brief.
+
+- task 2: see [`task2/README.md`](task2/README.md#zeabur). Build config in `task2/Dockerfile`. Persistent volume must be mounted at `/app/data` (URL notes + traces). Deploy URL: _to be filled in._
+
+## Contributing / collaborating
+
+This is a personal coding-test submission, not an open-source project — issues and PRs from outside collaborators aren't expected.
+
+## License
+
+No license file is included; the work is submitted for evaluation per the test brief. Treat all rights as reserved unless otherwise stated.
