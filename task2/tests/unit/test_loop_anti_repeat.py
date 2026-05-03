@@ -1471,3 +1471,68 @@ async def test_read_grep_dedup_resets_on_page_mutation(tmp_path):
     )
     await loop.run("find needle in page")
     assert not loop.tape[2]["obs"].startswith("DUPLICATE:")
+
+
+# ---------------------------------------------------------------------------
+# Hide read_grep after K=2 streak of fully-redundant calls (Task 4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_read_grep_hidden_after_3_fully_redundant_calls(tmp_path):
+    text = "alpha needle beta"
+    browser = _StubBrowser(text)
+    loop = _build_loop_with_grep(
+        browser,
+        [
+            ("read_grep", {"pattern": "needle", "reason": "1"}),
+            ("read_grep", {"pattern": "needle", "reason": "2"}),
+            ("read_grep", {"pattern": "needle", "reason": "3"}),
+            ("done", {"status": "failed", "answer": "stop", "reason": "x"}),
+        ],
+        tmp_path=tmp_path,
+    )
+    await loop.run("find needle in page")
+    third = loop.tape[2]["obs"]
+    assert "no longer available" in third
+    assert "read_grep" in loop._hidden_tools
+
+
+@pytest.mark.asyncio
+async def test_read_grep_streak_resets_on_other_tool(tmp_path):
+    text = "alpha needle beta"
+    browser = _StubBrowser(text)
+    loop = _build_loop_with_grep(
+        browser,
+        [
+            ("read_grep", {"pattern": "needle", "reason": "1"}),
+            ("read_grep", {"pattern": "needle", "reason": "2"}),
+            ("read", {"offset": 0, "reason": "interleave"}),
+            ("read_grep", {"pattern": "needle", "reason": "3 — should NOT hide"}),
+            ("done", {"status": "failed", "answer": "stop", "reason": "x"}),
+        ],
+        tmp_path=tmp_path,
+    )
+    await loop.run("find needle in page")
+    assert "read_grep" not in loop._hidden_tools
+    assert "no longer available" not in loop.tape[3]["obs"]
+
+
+@pytest.mark.asyncio
+async def test_read_grep_partial_overlap_does_not_count_toward_streak(tmp_path):
+    """Calls returning even one new line reset the streak — only fully-
+    redundant calls (DUPLICATE synthetic) accumulate."""
+    text = "XYZ XYZ XYZ XYZ"  # 4 occurrences, used for paginated overlap
+    browser = _StubBrowser(text)
+    loop = _build_loop_with_grep(
+        browser,
+        [
+            ("read_grep", {"pattern": "XYZ", "max_matches": 4, "offset": 0, "reason": "1"}),
+            ("read_grep", {"pattern": "XYZ", "max_matches": 4, "offset": 2, "reason": "2"}),
+            ("read_grep", {"pattern": "XYZ", "max_matches": 4, "offset": 1, "reason": "3"}),
+            ("done", {"status": "failed", "answer": "stop", "reason": "x"}),
+        ],
+        tmp_path=tmp_path,
+    )
+    await loop.run("scan XYZ markers across page")
+    assert "read_grep" not in loop._hidden_tools
