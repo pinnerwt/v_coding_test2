@@ -209,8 +209,8 @@ class BrowserSession:
 
         # For each combobox that resolves to a real <select>, surface its
         # <option> text values inline. Without this the model has to guess
-        # what `value` to pass to select_option and Playwright blocks for
-        # 30s on a non-match (canirun.ai bench case 113).
+        # what `value` to pass to click(id, value=...) and Playwright blocks
+        # for 30s on a non-match (canirun.ai bench case 113).
         page_slice = flat[offset : offset + limit]
         for entry in page_slice:
             if entry["role"] != "combobox":
