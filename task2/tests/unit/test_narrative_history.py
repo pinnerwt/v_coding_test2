@@ -75,8 +75,8 @@ def test_narrative_flattens_multiline_reason():
     assert "\nstep 1 | https://b.com |" in sys_content
 
 
-def test_user_message_includes_last_3_obs_raw():
-    tape = [_step("https://a.com", "read", {}, f"r{i}", f"obs-content-{i}") for i in range(5)]
+def test_user_message_includes_last_5_obs_raw():
+    tape = [_step("https://a.com", "read", {}, f"r{i}", f"obs-content-{i}") for i in range(8)]
     msgs = build_messages(
         system="<sys>",
         goal="g",
@@ -87,15 +87,13 @@ def test_user_message_includes_last_3_obs_raw():
         replan_hint=None,
     )
     user_content = msgs[1]["content"]
-    assert "## Recent observations (last 3)" in user_content
-    # Exactly the last 3, in order
-    assert "obs-content-2" in user_content
-    assert "obs-content-3" in user_content
-    assert "obs-content-4" in user_content
+    assert "## Recent observations (last 5)" in user_content
+    # Exactly the last 5, in order
+    for i in (3, 4, 5, 6, 7):
+        assert f"obs-content-{i}" in user_content
     # NOT the older ones
-    assert "obs-content-0" not in user_content
-    assert "obs-content-1" not in user_content
-    # Separator between obs (3 obs → 2 separators OR delimiter pattern)
+    for i in (0, 1, 2):
+        assert f"obs-content-{i}" not in user_content
     assert "---" in user_content
 
 

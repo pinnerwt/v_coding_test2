@@ -21,8 +21,8 @@ def test_system_prompt_mentions_action_history() -> None:
 
 
 def test_system_prompt_mentions_recent_observations() -> None:
-    assert "Recent observations" in _SYSTEM, (
-        "prompt must point the LLM at the `## Recent observations (last 3)` window"
+    assert "Recent observations (last 5)" in _SYSTEM, (
+        "prompt must point the LLM at the `## Recent observations (last 5)` window"
     )
 
 
@@ -58,4 +58,26 @@ def test_system_prompt_keeps_blocked_banner_rule() -> None:
 def test_system_prompt_keeps_final_step_done_rule() -> None:
     assert "final" in _SYSTEM.lower() and "done" in _SYSTEM, (
         "prompt must keep the final-step rule (only `done` available; do not stall)"
+    )
+
+
+def test_system_prompt_requires_evidence_on_done_success() -> None:
+    """done(success, ...) must be paired with a verbatim `evidence` substring
+    drawn from a prior read/read_grep observation. The prompt must teach this,
+    or the LLM will fabricate citations and the loop will downgrade them."""
+    flat = re.sub(r"\s+", " ", _SYSTEM)
+    # The prompt must spell out the `evidence` argument on the done() success
+    # form, not just mention the word "evidence" in passing.
+    assert 'done(status="success"' in flat and "evidence=" in flat, (
+        "prompt must show the done(success) signature including the new "
+        "`evidence` argument so the LLM knows to populate it"
+    )
+    assert "substring" in flat.lower(), (
+        "prompt must say evidence is a substring of a prior read/read_grep "
+        "observation (the loop validates it as a substring)"
+    )
+    low = flat.lower()
+    assert "fabricat" in low or "downgrade" in low or "rejected" in low, (
+        "prompt must warn that ungrounded/fabricated evidence is rejected or "
+        "downgraded to failed — otherwise the LLM will guess"
     )

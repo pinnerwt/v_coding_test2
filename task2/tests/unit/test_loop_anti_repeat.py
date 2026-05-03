@@ -569,12 +569,26 @@ async def test_read_grep_dedup_returns_synthetic_when_pattern_repeats(tmp_path):
     text = "the quick brown fox jumps over the lazy dog needle here\n"
     browser = _StubBrowser(text)
 
-    async def read_grep(pattern: str, window: int = 200, reason: str = ""):
-        body = await browser.page.evaluate("document.body.innerText")
-        idx = body.lower().find(pattern.lower())
-        if idx < 0:
-            return f"NOT FOUND: {pattern!r}"
-        return body[max(0, idx - window) : idx + len(pattern) + window]
+    async def read_grep(
+        pattern: str,
+        context: int = 80,
+        max_matches: int = 10,
+        offset: int = 0,
+        reason: str = "",
+    ):
+        from agent.tools.browser import build_browser_tools
+
+        class _S:
+            def __init__(self, b):
+                self.page = b.page
+
+        fns = build_browser_tools(_S(browser), restrict_goto=False)
+        return await fns["read_grep"](
+            pattern=pattern,
+            context=context,
+            max_matches=max_matches,
+            offset=offset,
+        )
 
     transport = _mock_llm_calls(
         [
@@ -595,7 +609,9 @@ async def test_read_grep_dedup_returns_synthetic_when_pattern_repeats(tmp_path):
                 "type": "object",
                 "properties": {
                     "pattern": {"type": "string"},
-                    "window": {"type": "integer"},
+                    "context": {"type": "integer"},
+                    "max_matches": {"type": "integer"},
+                    "offset": {"type": "integer"},
                     "reason": {"type": "string"},
                 },
                 "required": ["pattern"],
@@ -632,7 +648,7 @@ async def test_read_grep_dedup_returns_synthetic_when_pattern_repeats(tmp_path):
 
     step1 = loop.tape[1]
     assert step1["action"] == "read_grep"
-    assert "already searched" in step1["obs"].lower()
+    assert step1["obs"].startswith("DUPLICATE:")
 
 
 @pytest.mark.asyncio
@@ -964,7 +980,17 @@ async def test_force_done_at_max_steps_replaces_max_steps_fallback(tmp_path):
         if call_count["n"] in (1, 2):
             tc_name, tc_args = "read", {"offset": 0}
         else:
-            tc_name, tc_args = "done", {"status": "success", "answer": "extracted"}
+            tc_name, tc_args = (
+                "done",
+                {
+                    "status": "success",
+                    "answer": "extracted",
+                    # The read calls above omit `reason`, so each tape entry's
+                    # obs is the missing-reason ERROR string. Cite a stable
+                    # substring of it so coerce_done's evidence check passes.
+                    "evidence": "reason field is mandatory",
+                },
+            )
         return httpx.Response(
             200,
             json={
@@ -1126,7 +1152,14 @@ async def test_loop_recovers_from_hallucinated_tool_name(tmp_path, hallucinated_
         if call_count["n"] == 1:
             tc_name, tc_args = hallucinated_name, {}
         else:
-            tc_name, tc_args = "done", {"status": "success", "answer": "ok"}
+            tc_name, tc_args = (
+                "done",
+                {
+                    "status": "success",
+                    "answer": "ok",
+                    "evidence": "is not available right now",
+                },
+            )
         return httpx.Response(
             200,
             json={
@@ -1272,3 +1305,449 @@ async def test_loop_reason_call_lands_on_reason_log(tmp_path):
     # The second user message (turn after reason() call) must show the entry.
     assert "Reasoning so far:" in captured_user_messages[1]
     assert "- hello" in captured_user_messages[1]
+
+
+# ---------------------------------------------------------------------------
+# Per-line hash dedup for read_grep (Task 3)
+# ---------------------------------------------------------------------------
+
+
+def _build_real_read_grep_tool(browser):
+    """Wrap the real read_grep impl from agent.tools.browser onto the stub
+    browser, exposing the new schema (pattern, context, max_matches, offset)."""
+    from agent.tools.browser import build_browser_tools
+
+    class _S:
+        def __init__(self, b):
+            self.page = b.page
+
+    fns = build_browser_tools(_S(browser), restrict_goto=False)
+
+    async def read_grep(
+        pattern: str,
+        context: int = 80,
+        max_matches: int = 10,
+        offset: int = 0,
+        reason: str = "",
+    ):
+        return await fns["read_grep"](
+            pattern=pattern,
+            context=context,
+            max_matches=max_matches,
+            offset=offset,
+        )
+
+    return Tool(
+        "read_grep",
+        "rg",
+        {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+                "context": {"type": "integer"},
+                "max_matches": {"type": "integer"},
+                "offset": {"type": "integer"},
+                "reason": {"type": "string"},
+            },
+            "required": ["pattern"],
+        },
+        read_grep,
+    )
+
+
+def _done_tool(meta):
+    return Tool(
+        "done",
+        "done",
+        {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string"},
+                "answer": {"type": "string"},
+            },
+            "required": ["status", "answer"],
+        },
+        meta["done"],
+    )
+
+
+def _build_loop_with_grep(browser, calls, *, tmp_path, max_steps=8, extra_tools=None):
+    transport = _mock_llm_calls(calls)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(question_channel=qc)
+    reg.register(_build_real_read_grep_tool(browser))
+    reg.register(_build_read_tool(browser))
+    reg.register(_done_tool(meta))
+    for t in extra_tools or []:
+        reg.register(t)
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=max_steps,
+    )
+    return loop
+
+
+@pytest.mark.asyncio
+async def test_read_grep_per_line_dedup_fires_synthetic_when_all_lines_seen(tmp_path):
+    text = "alpha needle beta needle gamma"
+    browser = _StubBrowser(text)
+    loop = _build_loop_with_grep(
+        browser,
+        [
+            ("read_grep", {"pattern": "needle", "reason": "first"}),
+            ("read_grep", {"pattern": "needle", "reason": "again"}),
+            ("done", {"status": "failed", "answer": "stop", "reason": "x"}),
+        ],
+        tmp_path=tmp_path,
+    )
+    await loop.run("find needle in page")
+    assert loop.tape[1]["obs"].startswith("DUPLICATE:")
+
+
+@pytest.mark.asyncio
+async def test_read_grep_per_line_dedup_passes_partial_overlap_with_note(tmp_path):
+    """Two paginated calls overlap on snippet lines but the second adds a
+    new header — output keeps new lines and notes the hidden count."""
+    text = "XYZ XYZ XYZ XYZ"  # 4 occurrences
+    browser = _StubBrowser(text)
+    loop = _build_loop_with_grep(
+        browser,
+        [
+            ("read_grep", {"pattern": "XYZ", "max_matches": 4, "offset": 0, "reason": "1"}),
+            ("read_grep", {"pattern": "XYZ", "max_matches": 4, "offset": 2, "reason": "2"}),
+            ("done", {"status": "failed", "answer": "stop", "reason": "x"}),
+        ],
+        tmp_path=tmp_path,
+    )
+    await loop.run("find XYZ markers in page")
+    obs2 = loop.tape[1]["obs"]
+    assert not obs2.startswith("DUPLICATE:")
+    assert "lines hidden" in obs2
+
+
+@pytest.mark.asyncio
+async def test_read_grep_per_line_dedup_does_not_fire_when_offset_yields_new_lines(tmp_path):
+    text = ("XYZ " * 20).strip()
+    browser = _StubBrowser(text)
+    loop = _build_loop_with_grep(
+        browser,
+        [
+            ("read_grep", {"pattern": "XYZ", "max_matches": 5, "offset": 0, "reason": "p1"}),
+            ("read_grep", {"pattern": "XYZ", "max_matches": 5, "offset": 5, "reason": "p2"}),
+            ("done", {"status": "failed", "answer": "stop", "reason": "x"}),
+        ],
+        tmp_path=tmp_path,
+    )
+    await loop.run("scan XYZ markers across page")
+    obs2 = loop.tape[1]["obs"]
+    assert not obs2.startswith("DUPLICATE:")
+    assert "Showing matches 5-9" in obs2
+
+
+@pytest.mark.asyncio
+async def test_read_grep_dedup_resets_on_page_mutation(tmp_path):
+    """After a page mutation, the line cache is cleared — same pattern
+    re-issued returns a fresh, non-DUPLICATE obs."""
+    browser = _StubBrowser("alpha needle beta")
+
+    async def goto(url: str = "", reason: str = ""):
+        # Mutate the page text — the loop's mutation hook clears the cache.
+        browser.set_text("alpha needle beta v2")
+        return f"navigated to {url}"
+
+    goto_tool = Tool(
+        "goto",
+        "go",
+        {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            "required": ["url"],
+        },
+        goto,
+    )
+    loop = _build_loop_with_grep(
+        browser,
+        [
+            ("read_grep", {"pattern": "needle", "reason": "first"}),
+            ("goto", {"url": "https://x.test/2", "reason": "navigate"}),
+            ("read_grep", {"pattern": "needle", "reason": "post-nav"}),
+            ("done", {"status": "failed", "answer": "stop", "reason": "x"}),
+        ],
+        tmp_path=tmp_path,
+        extra_tools=[goto_tool],
+    )
+    await loop.run("find needle in page")
+    assert not loop.tape[2]["obs"].startswith("DUPLICATE:")
+
+
+# ---------------------------------------------------------------------------
+# Hide read_grep after K=2 streak of fully-redundant calls (Task 4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_read_grep_hidden_after_3_fully_redundant_calls(tmp_path):
+    text = "alpha needle beta"
+    browser = _StubBrowser(text)
+    loop = _build_loop_with_grep(
+        browser,
+        [
+            ("read_grep", {"pattern": "needle", "reason": "1"}),
+            ("read_grep", {"pattern": "needle", "reason": "2"}),
+            ("read_grep", {"pattern": "needle", "reason": "3"}),
+            ("done", {"status": "failed", "answer": "stop", "reason": "x"}),
+        ],
+        tmp_path=tmp_path,
+    )
+    await loop.run("find needle in page")
+    third = loop.tape[2]["obs"]
+    assert "no longer available" in third
+    assert "read_grep" in loop._hidden_tools
+
+
+@pytest.mark.asyncio
+async def test_read_grep_streak_resets_on_other_tool(tmp_path):
+    text = "alpha needle beta"
+    browser = _StubBrowser(text)
+    loop = _build_loop_with_grep(
+        browser,
+        [
+            ("read_grep", {"pattern": "needle", "reason": "1"}),
+            ("read_grep", {"pattern": "needle", "reason": "2"}),
+            ("read", {"offset": 0, "reason": "interleave"}),
+            ("read_grep", {"pattern": "needle", "reason": "3 — should NOT hide"}),
+            ("done", {"status": "failed", "answer": "stop", "reason": "x"}),
+        ],
+        tmp_path=tmp_path,
+    )
+    await loop.run("find needle in page")
+    assert "read_grep" not in loop._hidden_tools
+    assert "no longer available" not in loop.tape[3]["obs"]
+
+
+@pytest.mark.asyncio
+async def test_read_grep_partial_overlap_does_not_count_toward_streak(tmp_path):
+    """Calls returning even one new line reset the streak — only fully-
+    redundant calls (DUPLICATE synthetic) accumulate."""
+    text = "XYZ XYZ XYZ XYZ"  # 4 occurrences, used for paginated overlap
+    browser = _StubBrowser(text)
+    loop = _build_loop_with_grep(
+        browser,
+        [
+            ("read_grep", {"pattern": "XYZ", "max_matches": 4, "offset": 0, "reason": "1"}),
+            ("read_grep", {"pattern": "XYZ", "max_matches": 4, "offset": 2, "reason": "2"}),
+            ("read_grep", {"pattern": "XYZ", "max_matches": 4, "offset": 1, "reason": "3"}),
+            ("done", {"status": "failed", "answer": "stop", "reason": "x"}),
+        ],
+        tmp_path=tmp_path,
+    )
+    await loop.run("scan XYZ markers across page")
+    assert "read_grep" not in loop._hidden_tools
+
+
+# ---------------------------------------------------------------------------
+# Tape wired through to done() validation (Task 6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_done_validation_error_returned_as_obs_then_retry(tmp_path):
+    """First done(success) attempt cites fabricated evidence → rejected,
+    becomes ERROR obs; second attempt cites real evidence → succeeds."""
+    text = "the answer 9 is here"
+    browser = _StubBrowser(text)
+    transport = _mock_llm_calls(
+        [
+            ("read_grep", {"pattern": "answer", "reason": "look"}),
+            (
+                "done",
+                {
+                    "status": "success",
+                    "answer": "9",
+                    "evidence": "fictional substring not on page",
+                    "reason": "first try",
+                },
+            ),
+            (
+                "done",
+                {
+                    "status": "success",
+                    "answer": "9",
+                    "evidence": "the answer 9 is here",
+                    "reason": "fixed",
+                },
+            ),
+        ]
+    )
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    # Shared mutable tape — the loop appends to it and done() reads from it.
+    shared_tape: list[dict] = []
+    meta = build_meta_tools(question_channel=qc, tape=shared_tape)
+    reg.register(_build_real_read_grep_tool(browser))
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                    "answer": {"type": "string"},
+                    "evidence": {"type": "string"},
+                },
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=8,
+        tape=shared_tape,
+    )
+    result = await loop.run("find the answer in the page")
+    # Step 1 obs is the rejection; loop continues; step 2 succeeds.
+    assert "rejected" in loop.tape[1]["obs"]
+    assert result == {"status": "success", "answer": "9"}
+
+
+@pytest.mark.asyncio
+async def test_loop_forces_reason_call_every_5_steps(tmp_path):
+    """Every Nth step (step_idx in {5, 10, 15, …}) the loop must lock
+    tool_choice to reason() so the agent stops to consolidate. Steps in
+    between use the regular `required` tool_choice."""
+    text = "A" * 1600
+    browser = _StubBrowser(text)
+
+    captured_tool_choice: list[Any] = []
+    call_count = {"n": 0}
+
+    async def handler(request):
+        body = json.loads(request.content.decode())
+        captured_tool_choice.append(body.get("tool_choice"))
+        call_count["n"] += 1
+        n = call_count["n"]
+        # 1-indexed: calls 1..5 are read, call 6 (step_idx 5) is forced reason,
+        # call 7 (step_idx 6) is the final done.
+        if n <= 5:
+            tc_name, tc_args = "read", {"offset": (n - 1) * 1600, "reason": f"r{n}"}
+        elif n == 6:
+            tc_name, tc_args = (
+                "reason",
+                {
+                    "text": "consolidating: nothing useful so far",
+                    "reason": "step 5 checkpoint",
+                },
+            )
+        else:
+            tc_name, tc_args = (
+                "done",
+                {
+                    "status": "failed",
+                    "answer": "no answer found",
+                    "reason": "exhausted reads",
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": f"c{n}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc_name,
+                                        "arguments": json.dumps(tc_args),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    reason_log: list[str] = []
+    meta = build_meta_tools(question_channel=qc, reason_log=reason_log)
+    reg.register(_build_read_tool(browser))
+    reg.register(
+        Tool(
+            "reason",
+            "reason",
+            {
+                "type": "object",
+                "properties": {"text": {"type": "string"}, "reason": {"type": "string"}},
+                "required": ["text", "reason"],
+            },
+            meta["reason"],
+        )
+    )
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=10,
+        reason_log=reason_log,
+    )
+    await loop.run("anything")
+
+    # We expect at least 7 calls (steps 0..6 inclusive, no forced max_steps coercion).
+    assert len(captured_tool_choice) >= 7, captured_tool_choice
+    # Steps 0..4 → "required"
+    for i in range(5):
+        assert captured_tool_choice[i] == "required", (
+            f"call {i} (step {i}) should be 'required', got {captured_tool_choice[i]!r}"
+        )
+    # Step 5 → forced reason
+    assert captured_tool_choice[5] == {
+        "type": "function",
+        "function": {"name": "reason"},
+    }, f"call 5 (step 5) should force reason, got {captured_tool_choice[5]!r}"
+    # Step 6 → back to "required"
+    assert captured_tool_choice[6] == "required", (
+        f"call 6 (step 6) should be 'required', got {captured_tool_choice[6]!r}"
+    )

@@ -55,10 +55,19 @@ def _llm_returning(name: str, args: dict) -> LLMClient:
 
 @pytest.mark.asyncio
 async def test_coerce_done_returns_llm_done_tool_call():
-    llm = _llm_returning("done", {"status": "success", "answer": "the answer"})
+    llm = _llm_returning(
+        "done",
+        {
+            "status": "success",
+            "answer": "the answer",
+            "evidence": "page contains the answer plainly",
+        },
+    )
     result = await coerce_done_via_llm(
         llm=llm,
-        tape=[],
+        tape=[
+            {"action": "read", "args": {"offset": 0}, "obs": "page contains the answer plainly"},
+        ],
         goal="any goal",
         qa=[],
         url="https://x.test/",
@@ -68,7 +77,8 @@ async def test_coerce_done_returns_llm_done_tool_call():
         n_no_progress=None,
         done_tool_schema=_DONE_TOOL_SCHEMA,
     )
-    assert result == {"status": "success", "answer": "the answer"}
+    assert result["status"] == "success"
+    assert result["answer"] == "the answer"
 
 
 def _capturing_llm():
@@ -334,3 +344,62 @@ async def test_coerce_done_no_progress_placeholder_interpolates_n():
         "status": "failed",
         "answer": "stuck: no novel observation for 14 consecutive steps",
     }
+
+
+@pytest.mark.asyncio
+async def test_coerce_done_forces_failed_when_evidence_missing():
+    """When the coerced LLM response is success but the cited evidence
+    isn't in any prior obs, coerce_done downgrades to failed."""
+    llm = _llm_returning(
+        "done",
+        {
+            "status": "success",
+            "answer": "9",
+            "evidence": "fabricated text not on any page",
+        },
+    )
+    tape = [
+        {"action": "read", "args": {"offset": 0}, "obs": "the page says hello world"},
+    ]
+    result = await coerce_done_via_llm(
+        llm=llm,
+        tape=tape,
+        goal="g",
+        qa=[],
+        url="https://x.test/",
+        url_notes="",
+        page_header="URL=https://x.test/",
+        trigger="max_steps",
+        n_no_progress=None,
+        done_tool_schema=_DONE_TOOL_SCHEMA,
+    )
+    assert result["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_coerce_done_keeps_success_when_evidence_grounded():
+    llm = _llm_returning(
+        "done",
+        {
+            "status": "success",
+            "answer": "hello",
+            "evidence": "the page says hello world",
+        },
+    )
+    tape = [
+        {"action": "read", "args": {"offset": 0}, "obs": "the page says hello world"},
+    ]
+    result = await coerce_done_via_llm(
+        llm=llm,
+        tape=tape,
+        goal="g",
+        qa=[],
+        url="https://x.test/",
+        url_notes="",
+        page_header="URL=https://x.test/",
+        trigger="max_steps",
+        n_no_progress=None,
+        done_tool_schema=_DONE_TOOL_SCHEMA,
+    )
+    assert result["status"] == "success"
+    assert result["answer"] == "hello"

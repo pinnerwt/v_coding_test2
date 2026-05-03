@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from typing import Any
@@ -38,19 +39,36 @@ per prior step (`step N | url | action_call | reason`). Re-read it each turn:
 - If you have issued the same call 2–3 times with no progress, the strategy is
   not working — change approach (different page, different element, commit done).
 
-## Use `## Recent observations (last 3)`
-The user message includes a `## Recent observations (last 3)` section with the
-raw text of the 3 most recent observations. Older observations are NOT preserved
+## Use `## Recent observations (last 5)`
+The user message includes a `## Recent observations (last 5)` section with the
+raw text of the 5 most recent observations. Older observations are NOT preserved
 verbatim — only your `reason` strings are. Write reasons that capture what you
 saw, because future turns will not see the raw obs again.
+
+## Forced reason checkpoint every 5 steps
+Every 5th step (step 5, 10, 15, …) the loop locks the tool choice to `reason()`.
+On those turns you MUST call `reason(text=..., reason=...)` with a 3-part
+consolidation: (a) what concrete facts the last 5 obs established — including
+any *secondary* findings that would make a good-enough fallback answer if the
+primary goal stays unreachable, (b) what's still missing, (c) the next 1-3
+actions you intend to try. The reason text is your durable scratchpad — write
+it for your future self.
 
 ## Grounding
 Element IDs come from `list_interactive` — never invent CSS selectors or guess
 element IDs from prior knowledge.
 
 ## Stopping rules
-- Call `done(status="success", answer="<answer>", reason="...")` as soon as you
-  have the answer. Do not keep exploring after you have it.
+- Call `done(status="success", answer="<answer>", evidence="<verbatim
+  substring>", reason="...")` as soon as you have the answer. The `evidence`
+  argument is REQUIRED on success — it must be a verbatim substring (≥10 chars)
+  copied from a prior `read` or `read_grep` observation that contains your
+  answer. Do not paraphrase, do not summarize, do not infer from prior
+  knowledge: the loop checks `evidence` against the actual tape and rejects
+  fabricated citations (success is downgraded to failed). If you cannot point
+  to a substring in your reads that contains the answer, you do not yet have
+  the answer — read more of the page first. Do not keep exploring after you
+  have a grounded answer.
 - Call `done(status="failed", answer="<best partial>", reason="...")` when you
   have exhausted reasonable approaches.
 - Rendered-value caveat: if the goal asks for a value the page does not render
@@ -137,6 +155,7 @@ class ReactLoop:
         diff_inject_max_lines: int = 50,
         reason_log: list[str] | None = None,
         on_visit: Callable[[str], None] | None = None,
+        tape: list[dict[str, Any]] | None = None,
     ):
         self.llm = llm
         self.registry = registry
@@ -146,7 +165,7 @@ class ReactLoop:
         self.qc = question_channel
         self.max_steps = max_steps
         self.send_transient = send_transient
-        self.tape: list[dict[str, Any]] = []
+        self.tape: list[dict[str, Any]] = tape if tape is not None else []
         self.qa: list[tuple[str, str]] = []
         self.read_cache = OffsetCache()
         self.list_interactive_cache = OffsetCache()
@@ -156,7 +175,8 @@ class ReactLoop:
         self.global_cache = GlobalTextCache()
         self._small_diff_threshold = small_diff_threshold
         self._diff_inject_max_lines = diff_inject_max_lines
-        self._read_grep_seen: dict[str, int] = {}
+        self._read_grep_line_hashes: dict[str, int] = {}
+        self._read_grep_dedup_streak: int = 0
         self._wall_streak: int = 0
         self._wall_kind: Wall | None = None
         self.reason_log: list[str] = reason_log if reason_log is not None else []
@@ -246,7 +266,8 @@ class ReactLoop:
                     self.read_cache.clear()
                     self.list_interactive_cache.clear()
                     self._hidden_tools.clear()
-                    self._read_grep_seen.clear()
+                    self._read_grep_line_hashes.clear()
+                    self._read_grep_dedup_streak = 0
                 # If the previous step was press_key and the page didn't change, hide it.
                 if (
                     self.tape
@@ -293,11 +314,29 @@ class ReactLoop:
                 reason_log=self.reason_log,
                 interactive_elements=interactive_elements,
             )
+            if step_idx > 0 and step_idx % 5 == 0:
+                tool_choice: Any = {"type": "function", "function": {"name": "reason"}}
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Checkpoint (step {step_idx}): you have taken 5 steps "
+                            "since the last forced reason. Call reason() now to "
+                            "consolidate — (a) facts the last 5 obs established, "
+                            "including any secondary findings that would make a "
+                            "good-enough fallback answer if the primary goal stays "
+                            "unreachable, (b) what's still missing, (c) the next "
+                            "1-3 actions you'll try."
+                        ),
+                    }
+                )
+            else:
+                tool_choice = "required"
             if self.send_transient is not None:
                 await self.send_transient({"type": "llm_call_start"})
             try:
                 msg, usage = await self.llm.chat(
-                    messages, tools=tools, tool_choice="required", reasoning=False
+                    messages, tools=tools, tool_choice=tool_choice, reasoning=False
                 )
             except ToolNameNotAllowed as e:
                 obs = (
@@ -368,16 +407,6 @@ class ReactLoop:
                     }
                 )
                 continue
-
-            read_grep_synthetic: str | None = None
-            if name == "read_grep" and isinstance(args, dict):
-                pat = (args.get("pattern", "") or "").lower()
-                if pat and pat in self._read_grep_seen:
-                    prior_step = self._read_grep_seen[pat]
-                    read_grep_synthetic = (
-                        f'(pattern "{args.get("pattern", "")}" already searched at '
-                        f"step {prior_step}, no new matches.)"
-                    )
 
             grounding_block: str | None = None
             if name == "read_grep" and isinstance(args, dict):
@@ -491,9 +520,7 @@ class ReactLoop:
                     )
 
             try:
-                if read_grep_synthetic is not None:
-                    obs = read_grep_synthetic
-                elif obs_override is not None:
+                if obs_override is not None:
                     obs = obs_override
                 elif grounding_block is not None:
                     obs = grounding_block
@@ -501,15 +528,49 @@ class ReactLoop:
                     obs = await self.registry.call(name, args)
                     if auto_advance_prefix is not None and isinstance(obs, str):
                         obs = f"{auto_advance_prefix} {obs}"
-                if (
-                    name == "read_grep"
-                    and read_grep_synthetic is None
-                    and isinstance(obs, str)
-                    and not obs.startswith("NOT FOUND:")
-                ):
-                    pat = (args.get("pattern", "") or "").lower()
-                    if pat:
-                        self._read_grep_seen[pat] = step_idx
+                if name == "read_grep" and isinstance(obs, str):
+                    raw_lines = obs.splitlines()
+                    kept: list[str] = []
+                    hidden = 0
+                    has_new = False
+                    for ln in raw_lines:
+                        key = ln.strip()
+                        if not key:
+                            kept.append(ln)
+                            continue
+                        h = hashlib.sha256(key.encode("utf-8")).hexdigest()
+                        if h in self._read_grep_line_hashes:
+                            hidden += 1
+                            continue
+                        self._read_grep_line_hashes[h] = step_idx
+                        kept.append(ln)
+                        has_new = True
+                    if not has_new:
+                        obs = (
+                            f"DUPLICATE: read_grep returned {hidden} lines, all "
+                            "previously shown. Page text has not changed since. "
+                            "Try a different pattern, a different offset, or call done()."
+                        )
+                        self._read_grep_dedup_streak += 1
+                        if self._read_grep_dedup_streak >= 2:
+                            self._hidden_tools.add("read_grep")
+                            obs = (
+                                "read_grep is no longer available this turn — it "
+                                "returned only previously-shown lines 3× in a row. "
+                                "Use 'read' with a different offset, list_interactive, "
+                                "or done()."
+                            )
+                    else:
+                        if hidden > 0:
+                            obs = "\n".join(kept) + (
+                                f"\n  ({hidden} lines hidden — already shown in "
+                                "prior read_grep calls)"
+                            )
+                        else:
+                            obs = "\n".join(kept)
+                        self._read_grep_dedup_streak = 0
+                elif name != "read_grep":
+                    self._read_grep_dedup_streak = 0
             except LoopDone as d:
                 self.trace.write(
                     {

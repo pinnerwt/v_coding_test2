@@ -112,17 +112,81 @@ def build_browser_tools(
         except Exception as e:
             return f"ERROR: {e}"
 
-    async def read_grep(pattern: str, window: int = 200) -> str:
+    async def read_grep(
+        pattern: str,
+        context: int = 80,
+        max_matches: int = 10,
+        offset: int = 0,
+    ) -> str:
         try:
             text = await session.page.evaluate("document.body.innerText")
-            idx = text.lower().find(pattern.lower())
-            if idx < 0:
-                return f"NOT FOUND: {pattern!r}"
-            start = max(0, idx - window)
-            end = min(len(text), idx + len(pattern) + window)
-            return text[start:end]
         except Exception as e:
             return f"ERROR: {e}"
+        n = len(text)
+        if not pattern:
+            return f"NO MATCH for '' in page text ({n} chars)."
+        needle = pattern.lower()
+        hay = text.lower()
+        positions: list[int] = []
+        i = 0
+        while True:
+            j = hay.find(needle, i)
+            if j < 0:
+                break
+            positions.append(j)
+            i = j + max(1, len(needle))
+        total = len(positions)
+        if total == 0:
+            lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+            seen: set[str] = set()
+            vocab: list[str] = []
+            for ln in sorted(lines, key=len, reverse=True):
+                key = ln.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                vocab.append(ln if len(ln) <= 40 else ln[:37] + "…")
+                if len(vocab) >= 5:
+                    break
+            if vocab:
+                quoted = ", ".join(f'"{v}"' for v in vocab)
+                return (
+                    f"NO MATCH for {pattern!r} in page text ({n} chars). "
+                    f"The text contains: {quoted} — try one of these, or call done()."
+                )
+            return f"NO MATCH for {pattern!r} in page text ({n} chars)."
+        if offset >= total:
+            return (
+                f"NO MORE MATCHES for {pattern!r} at offset={offset} "
+                f"({total} total in page). Call read_grep with offset=0..{total - 1} or done()."
+            )
+        end = min(total, offset + max_matches)
+        shown = positions[offset:end]
+        snippets: list[str] = []
+        for p in shown:
+            s = max(0, p - context)
+            e = min(n, p + len(pattern) + context)
+            chunk = text[s:e].replace("\n", "\\n")
+            snippets.append(f"  [@{p}] …{chunk}…")
+        if total == 1:
+            header = f"1 match for {pattern!r} in page text ({n} chars):"
+            body = "\n".join(snippets)
+            return f"{header}\n{body}"
+        header = (
+            f"{total} matches for {pattern!r} in page text ({n} chars). "
+            f"Showing matches {offset}-{end - 1} of {total}:"
+        )
+        tail = ""
+        if end < total:
+            more = positions[end:]
+            more_preview = ", ".join(str(p) for p in more[:5])
+            if len(more) > 5:
+                more_preview += f", … (+{len(more) - 5} more)"
+            tail = (
+                f"\n({len(more)} more matches at offsets {more_preview} — call "
+                f"read_grep(pattern={pattern!r}, offset={end}) for the rest.)"
+            )
+        return f"{header}\n" + "\n".join(snippets) + tail
 
     async def list_interactive(offset: int = 0, limit: int = 50) -> str:
         try:
@@ -252,12 +316,16 @@ def build_browser_tool_list(
         ),
         Tool(
             "read_grep",
-            "Find first case-insensitive occurrence of pattern; return centered window.",
+            "Find all case-insensitive occurrences of pattern; returns a "
+            "paginated index with character-offset markers. context controls "
+            "snippet width only; offset skips the first N matches.",
             {
                 "type": "object",
                 "properties": {
                     "pattern": {"type": "string"},
-                    "window": {"type": "integer", "default": 200},
+                    "context": {"type": "integer", "default": 80},
+                    "max_matches": {"type": "integer", "default": 10},
+                    "offset": {"type": "integer", "default": 0},
                     "reason": {"type": "string"},
                 },
                 "required": ["pattern", "reason"],

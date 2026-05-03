@@ -23,8 +23,9 @@ async def test_goto_read_grep_list(tmp_path):
         text = await tools["read"]()
         assert "Welcome" in text and len(text) <= 2000
 
-        grep = await tools["read_grep"](pattern="needle", window=20)
+        grep = await tools["read_grep"](pattern="needle", context=20)
         assert "Needle" in grep
+        assert "[@" in grep
 
         listing = await tools["list_interactive"]()
         assert "snapshot taken" in listing
