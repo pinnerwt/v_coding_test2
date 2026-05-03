@@ -79,3 +79,33 @@ async def test_done_evidence_normalization_whitespace_and_case():
             answer="quick brown fox",
             evidence="the   QUICK brown   fox",
         )
+
+
+@pytest.mark.asyncio
+async def test_done_answer_with_parens_matches_unparenthesized_evidence():
+    """Regression for trace 7bd13ccc — agent identified Python at 99.9% from a
+    GitHub repo's Languages sidebar, then burned 9 steps trying to satisfy the
+    answer⊂evidence check because 'Python (99.9%)' has parens that the page
+    text 'Python\\n99.9%' does not. Bracket characters must not break the
+    containment check; the answer is factually present in the evidence."""
+    done = _done(["Languages\nPython\n99.9%\n \nOther\n0.1%"])
+    with pytest.raises(LoopDone) as e:
+        await done(
+            status="success",
+            answer="Python (99.9%)",
+            evidence="Languages\nPython\n99.9%\nOther\n0.1%",
+        )
+    assert e.value.status == "success" and e.value.answer == "Python (99.9%)"
+
+
+@pytest.mark.asyncio
+async def test_done_answer_with_brackets_matches_unbracketed_evidence():
+    """Same shape, square brackets — common when answers cite a range like
+    '9 [over 0,3]' but the page just said '9 over 0,3'."""
+    done = _done(["the integral evaluates to 9 over 0,3 by FTC"])
+    with pytest.raises(LoopDone):
+        await done(
+            status="success",
+            answer="9 [over 0,3]",
+            evidence="evaluates to 9 over 0,3",
+        )

@@ -37,7 +37,15 @@ class QuestionChannel:
             self._fut.set_result(text)
 
 
+_BRACKETS_RE = re.compile(r"[()\[\]{}]")
+
+
 def _normalize(s: str) -> str:
+    # Strip () [] {} so a human-formatted answer like "Python (99.9%)" can
+    # still be substring-matched against unparenthesized page text. Other
+    # punctuation (., %, ,) is preserved so percentages and decimals remain
+    # intact on both sides of the comparison.
+    s = _BRACKETS_RE.sub(" ", s)
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
