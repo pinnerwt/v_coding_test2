@@ -47,14 +47,16 @@ def test_histogram_hidden_when_no_repeats():
 
 
 def test_novelty_tally_zero_when_recent_all_seen_before():
-    """Same obs across 10+ steps with different args → novelty=0/10."""
+    """Same obs across NOVELTY_WINDOW+ steps with different args → novelty=0/N."""
+    from agent.context import NOVELTY_WINDOW
+
     tape = [
         # Two seed observations to populate the "earlier" set
         {"thought": "", "action": "read", "args": {}, "obs": "X"},
         {"thought": "", "action": "list_interactive", "args": {}, "obs": "Y"},
     ]
-    # 10 more steps, all yielding obs "X" or "Y" (already seen)
-    for i in range(10):
+    # NOVELTY_WINDOW more steps, all yielding obs "X" or "Y" (already seen)
+    for i in range(NOVELTY_WINDOW):
         tape.append(
             {
                 "thought": "",
@@ -64,21 +66,24 @@ def test_novelty_tally_zero_when_recent_all_seen_before():
             }
         )
     user = _build(tape)
-    assert "Novel observations in last 10 steps: 0/10" in user
+    assert f"Novel observations in last {NOVELTY_WINDOW} steps: 0/{NOVELTY_WINDOW}" in user
 
 
 def test_novelty_tally_full_when_each_obs_is_new():
+    from agent.context import NOVELTY_WINDOW
+
     tape = [
         {"thought": "", "action": "read", "args": {"offset": k}, "obs": f"chunk-{k}"}
-        for k in range(12)
+        for k in range(NOVELTY_WINDOW + 2)
     ]
     user = _build(tape)
-    assert "Novel observations in last 10 steps: 10/10" in user
+    assert (
+        f"Novel observations in last {NOVELTY_WINDOW} steps: {NOVELTY_WINDOW}/{NOVELTY_WINDOW}"
+        in user
+    )
 
 
 def test_novelty_tally_hidden_when_tape_too_short():
-    tape = [
-        {"thought": "", "action": "read", "args": {}, "obs": "X"} for _ in range(5)
-    ]
+    tape = [{"thought": "", "action": "read", "args": {}, "obs": "X"} for _ in range(5)]
     user = _build(tape)
     assert "Novel observations in last" not in user

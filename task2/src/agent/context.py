@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 K_RECENT = 8
-NOVELTY_WINDOW = 10
+NOVELTY_WINDOW = 8
 OBS_FINGERPRINT_LEN = 200
 
 

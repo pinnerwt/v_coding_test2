@@ -45,7 +45,7 @@ _REPLAN_HINT = (
 # Catches arbitrary-length cycles that the hint state machine misses
 # because a single varied action keeps resetting it. canirun.ai bench
 # case 113 burned 50 steps because no such ceiling existed.
-NO_PROGRESS_GIVEUP = 12
+NO_PROGRESS_GIVEUP = 9
 
 
 def _step_key(step: dict) -> tuple:

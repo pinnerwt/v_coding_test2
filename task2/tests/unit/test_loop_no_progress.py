@@ -167,3 +167,15 @@ async def test_no_progress_streak_forces_done_failed(tmp_path):
         f"loop called LLM {call_n['i']} times before giving up — streak force-done did not fire"
     )
     assert "stuck" in result["answer"].lower(), result["answer"]
+
+
+def test_no_progress_giveup_is_9():
+    from agent.loop import NO_PROGRESS_GIVEUP
+
+    assert NO_PROGRESS_GIVEUP == 9
+
+
+def test_novelty_window_is_8():
+    from agent.context import NOVELTY_WINDOW
+
+    assert NOVELTY_WINDOW == 8
