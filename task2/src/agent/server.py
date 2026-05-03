@@ -31,17 +31,56 @@ from agent.trace import TraceWriter, read_trace
 _SID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
+async def _acquire_with_queue_notify(
+    *,
+    sem: asyncio.Semaphore,
+    capacity: int,
+    sid: str,
+    in_flight: int,
+    send_event: Any,
+) -> int:
+    """Acquire `sem`, emitting a 'queued' event before blocking when the
+    pool is saturated. Returns the wait time in milliseconds.
+
+    Why two paths: when capacity is available we skip the event (and the
+    extra await) entirely so the fast-path stays fast. When in_flight has
+    already hit capacity we send the event FIRST, then block — the UI
+    needs the signal before the wait begins, not after it ends.
+    """
+    if in_flight >= capacity:
+        await send_event(
+            {
+                "type": "queued",
+                "payload": {"sid": sid, "ahead": in_flight - capacity + 1},
+            }
+        )
+    t0 = time.monotonic()
+    await sem.acquire()
+    return int((time.monotonic() - t0) * 1000)
+
+
 def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> FastAPI:
     app = FastAPI()
     here = Path(__file__).parent
     templates = Jinja2Templates(directory=str(here / "templates"))
     app.mount("/static", StaticFiles(directory=str(here / "static")), name="static")
-    sem = asyncio.Semaphore(1)
+    capacity = 5
+    sem = asyncio.Semaphore(capacity)
+    app.state.session_semaphore = sem
+    app.state.sessions_in_flight = 0
     notes = NotesStore(data_dir / "url_notes.db", query_strip=cfg.url_note_query_strip)
 
     async def run_loop(goal: str, send_event, ask_user) -> dict:
-        async with sem:
-            session_id = uuid.uuid4().hex
+        session_id = uuid.uuid4().hex
+        queued_for_ms = await _acquire_with_queue_notify(
+            sem=sem,
+            capacity=capacity,
+            sid=session_id,
+            in_flight=app.state.sessions_in_flight,
+            send_event=send_event,
+        )
+        app.state.sessions_in_flight += 1
+        try:
             (data_dir / "traces").mkdir(parents=True, exist_ok=True)
             trace = TraceWriter(data_dir / "traces" / f"{session_id}.jsonl")
 
@@ -133,11 +172,18 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                         tape=tape,
                     )
                     loop_holder.append(loop)
-                    return await loop.run(goal)
+                    result = await loop.run(goal)
+                    if isinstance(result, dict):
+                        result["queued_for_ms"] = queued_for_ms
+                        result["sid"] = session_id
+                    return result
                 finally:
                     pump_task.cancel()
             finally:
                 await browser.close()
+        finally:
+            app.state.sessions_in_flight -= 1
+            sem.release()
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request):

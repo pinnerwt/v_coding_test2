@@ -64,13 +64,26 @@ function removeThinking() {
   document.querySelectorAll(".card.thinking").forEach(el => el.remove());
 }
 
+function removeQueued() {
+  document.querySelectorAll(".card.queued").forEach(el => el.remove());
+}
+
 function renderEvent(ev) {
   const t = $("transcript");
-  if (ev.type === "session_started") {
+  if (ev.type === "queued") {
+    const ahead = ev.payload && ev.payload.ahead;
+    const el = document.createElement("div");
+    el.className = "card queued";
+    el.innerHTML = `<div class=summary>⏳ Queued — ${ahead ?? "?"} ahead. Server is at capacity (5 concurrent sessions); waiting for a slot…</div>`;
+    t.appendChild(el);
+    $("run-status").textContent = "● queued";
+  } else if (ev.type === "session_started") {
+    removeQueued();
     const el = document.createElement("div");
     el.className = "card expanded goal";
     el.innerHTML = `<div class=summary><b>Goal:</b> ${esc(ev.payload.goal)}</div>`;
     t.appendChild(el);
+    $("run-status").textContent = "● running";
   } else if (ev.type === "step") {
     removeThinking();
     const p = ev.payload;
