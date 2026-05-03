@@ -169,13 +169,7 @@ async def test_no_progress_streak_forces_done_failed(tmp_path):
     assert "stuck" in result["answer"].lower(), result["answer"]
 
 
-def test_no_progress_constants_align_with_k_recent():
-    """The no-progress trigger fires one step past the visible recent
-    context window: NOVELTY_WINDOW == K_RECENT and NO_PROGRESS_GIVEUP ==
-    K_RECENT + 1. If you change one, you almost certainly want to change
-    the others — this test forces the conversation."""
-    from agent.context import K_RECENT, NOVELTY_WINDOW
-    from agent.loop import NO_PROGRESS_GIVEUP
-
-    assert NOVELTY_WINDOW == K_RECENT
-    assert NO_PROGRESS_GIVEUP == K_RECENT + 1
+# TODO(T7): delete with stuck-detection — K_RECENT and NOVELTY_WINDOW were
+# removed from agent.context in T6 (raw last-3-obs replaces the recent-pair
+# window), so this constant-alignment test no longer has a counterpart.
+# def test_no_progress_constants_align_with_k_recent(): ...

@@ -233,9 +233,13 @@ async def test_coerce_done_truncates_long_read_obs():
         done_tool_schema=_DONE_TOOL_SCHEMA,
     )
     user_msgs = [m["content"] for m in captured["payload"]["messages"] if m["role"] == "user"]
-    combined = "\n".join(user_msgs)
-    assert "X" * 800 in combined
-    assert "X" * 801 not in combined
+    # Verify _read_content_dump's truncation specifically (its block starts
+    # with "Read content captured so far"). The raw obs may also surface
+    # untruncated via the last-3-obs section in build_messages, so don't
+    # combine all user messages here.
+    dump = next(m for m in user_msgs if m.startswith("Read content captured so far"))
+    assert "X" * 800 in dump
+    assert "X" * 801 not in dump
 
 
 @pytest.mark.asyncio

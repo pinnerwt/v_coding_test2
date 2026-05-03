@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from agent.context import NOVELTY_WINDOW, _obs_fingerprint, build_messages
+from agent.context import build_messages
 from agent.distill import distill_page_knowledge
 from agent.force_done import coerce_done_via_llm
 from agent.llm import LLMClient, ToolNameNotAllowed
@@ -47,6 +47,15 @@ _REPLAN_HINT = (
 # because a single varied action keeps resetting it. canirun.ai bench
 # case 113 burned 50 steps because no such ceiling existed.
 NO_PROGRESS_GIVEUP = 9
+
+# Inlined here (no longer in agent.context after T6) — still used by the
+# stuck/no-progress detector below. T7 deletes the detector and these too.
+_NOVELTY_WINDOW = 8
+_OBS_FINGERPRINT_LEN = 200
+
+
+def _obs_fingerprint(obs: str) -> str:
+    return (obs or "")[:_OBS_FINGERPRINT_LEN]
 
 
 def _step_key(step: dict) -> tuple:
@@ -174,13 +183,13 @@ class ReactLoop:
         return _step_key(self.tape[-1]) == _step_key(self.tape[-2]) == _step_key(self.tape[-3])
 
     def _no_progress(self) -> bool:
-        """True when the last NOVELTY_WINDOW observations have all been seen
+        """True when the last _NOVELTY_WINDOW observations have all been seen
         earlier in the tape — catches arbitrary-length cycles that
         _last_three_match misses (e.g. click→list→read→escape→click→…)."""
-        if len(self.tape) < NOVELTY_WINDOW + 1:
+        if len(self.tape) < _NOVELTY_WINDOW + 1:
             return False
-        earlier = self.tape[:-NOVELTY_WINDOW]
-        recent = self.tape[-NOVELTY_WINDOW:]
+        earlier = self.tape[:-_NOVELTY_WINDOW]
+        recent = self.tape[-_NOVELTY_WINDOW:]
         earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in earlier}
         return all(_obs_fingerprint(s.get("obs", "")) in earlier_fps for s in recent)
 

@@ -2,9 +2,9 @@ from agent.context import build_messages
 
 
 def test_older_tape_with_empty_obs_does_not_crash():
-    """Tools may return '' (e.g. some no-op observations). Once such a step
-    falls into the older-tape summary window, _short used to crash with
-    IndexError because ''.splitlines() == []. Caught Wolfram bench at step 15."""
+    """Tools may return '' (e.g. some no-op observations). The narrative
+    history must render fine for empty-obs steps (the old _short helper
+    used to crash with IndexError on ''.splitlines())."""
     tape = [{"reason": "", "action": "read", "args": {}, "obs": ""} for _ in range(10)]
     msgs = build_messages(
         system="SYS",
@@ -16,7 +16,8 @@ def test_older_tape_with_empty_obs_does_not_crash():
         replan_hint=None,
     )
     assert msgs[1]["role"] == "user"
-    assert "step 0: read" in msgs[1]["content"]
+    # Narrative is rendered into the system message now.
+    assert "step 0 | " in msgs[0]["content"]
 
 
 def test_ordering_and_compression():
@@ -40,14 +41,12 @@ def test_ordering_and_compression():
     assert "Q: size?" in user and "A: M" in user
     assert "tried X" in user
     assert "URL=x" in user
-    assert "step 0: read" in user
-    assert "step 3: read" in user
+    # Narrative (step lines) lives in the system message now.
+    assert "step 0 | " in sys
+    assert "step 3 | " in sys
 
-    expanded = msgs[2:]
-    assert len(expanded) == 8 * 2
-    assert expanded[0]["role"] == "assistant"
-    assert expanded[1]["role"] == "tool"
-    assert any("t11" in m.get("content", "") for m in expanded)
+    # Conversation is exactly system + user.
+    assert len(msgs) == 2
 
 
 def test_replan_hint_appended_to_system():
