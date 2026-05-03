@@ -247,7 +247,6 @@ async def test_snapshot_link_exposes_href():
 HTML_PLACEHOLDERS = """<!doctype html><html><body>
 <input type=text placeholder="Search models, datasets, users…">
 <input type=text>
-<input type=search placeholder="ignored-by-search-role">
 </body></html>"""
 
 

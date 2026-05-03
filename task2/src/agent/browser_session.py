@@ -130,7 +130,7 @@ class BrowserSession:
                             raw = (href.get("result") or {}).get("value") or ""
                             if raw:
                                 entry["href"] = raw
-                    if role in ("textbox", "searchbox"):
+                    if role == "textbox":
                         with contextlib.suppress(Exception):
                             res = await cdp.send(
                                 "Runtime.callFunctionOn",
