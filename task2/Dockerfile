@@ -7,4 +7,4 @@ COPY src ./src
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH=/app/src
 EXPOSE 8000
-CMD ["uvicorn", "agent.server:build_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "agent.server:app_factory", "--factory", "--host", "0.0.0.0", "--port", "8000"]
