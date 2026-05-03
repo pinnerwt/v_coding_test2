@@ -46,6 +46,14 @@ button{cursor:pointer;font:inherit}
 #collapse,#newchat{border:1px solid var(--bd);background:#fff;border-radius:4px}
 #collapse{float:right;padding:.1rem .4rem}
 #newchat{display:block;width:100%;margin:.4rem 0 .8rem;padding:.4rem;text-align:left}
+#gate{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:1000}
+#gate.show{display:flex}
+#gate .panel{background:#fff;border-radius:8px;padding:1.4rem 1.6rem;width:340px;box-shadow:0 8px 32px rgba(0,0,0,.25)}
+#gate h3{margin:0 0 .3rem;font-size:1rem}
+#gate .hint{color:var(--mut);font-size:.82rem;margin-bottom:.8rem;line-height:1.35}
+#gate input{width:100%;padding:.45rem .55rem;font:inherit;border:1px solid var(--bd);border-radius:4px}
+#gate .err{color:var(--bad);font-size:.78rem;margin-top:.4rem;min-height:1em}
+#gate button{margin-top:.7rem;width:100%;padding:.45rem;background:#333;color:#fff;border:0;border-radius:4px}
 </style></head>
 <body>
 <div id=layout>
@@ -70,5 +78,14 @@ button{cursor:pointer;font:inherit}
   <span>tokens <span id=tok-prompt>0</span> in / <span id=tok-completion>0</span> out</span>
   <span>steps <span id=step-count>0</span>/<span id=step-max>?</span></span>
   <span id=run-status></span>
+</div>
+<div id=gate>
+  <div class=panel>
+    <h3>Passcode required</h3>
+    <div class=hint>Hint: the english name of the company, connected by <code>_</code>, all lowercase.</div>
+    <input id=gate-input type=password autocomplete=off autofocus>
+    <div id=gate-err class=err></div>
+    <button id=gate-submit>Unlock</button>
+  </div>
 </div>
 </body></html>

@@ -8,10 +8,60 @@ let stepCount = 0;
 const STEP_MAX = 50;
 $("step-max").textContent = STEP_MAX;
 
+// ---------- auth ----------
+const TOKEN_KEY = "agent_auth_token";
+let authToken = localStorage.getItem(TOKEN_KEY) || "";
+
+function authHeaders() {
+  return authToken ? {"Authorization": "Bearer " + authToken} : {};
+}
+
+async function authFetch(url, init = {}) {
+  const headers = Object.assign({}, init.headers || {}, authHeaders());
+  const r = await fetch(url, Object.assign({}, init, {headers}));
+  if (r.status === 401) {
+    authToken = "";
+    localStorage.removeItem(TOKEN_KEY);
+    showGate("Session expired — please re-enter the passcode.");
+  }
+  return r;
+}
+
+function wsUrl(path) {
+  const base = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + path;
+  return authToken ? base + (path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(authToken) : base;
+}
+
+function showGate(msg = "") {
+  $("gate-err").textContent = msg;
+  $("gate").classList.add("show");
+  setTimeout(() => $("gate-input").focus(), 0);
+}
+function hideGate() { $("gate").classList.remove("show"); $("gate-input").value = ""; $("gate-err").textContent = ""; }
+
+async function tryToken(t) {
+  // Probe an auth-gated endpoint with the candidate token.
+  const r = await fetch("/api/sessions", {headers: {"Authorization": "Bearer " + t}});
+  return r.status !== 401;
+}
+
+$("gate-submit").onclick = async () => {
+  const t = $("gate-input").value.trim();
+  if (!t) { $("gate-err").textContent = "Please enter the passcode."; return; }
+  $("gate-err").textContent = "Checking…";
+  const ok = await tryToken(t);
+  if (!ok) { $("gate-err").textContent = "Wrong passcode. Try again."; return; }
+  authToken = t;
+  localStorage.setItem(TOKEN_KEY, t);
+  hideGate();
+  boot();
+};
+$("gate-input").addEventListener("keydown", e => { if (e.key === "Enter") $("gate-submit").click(); });
+
 // ---------- sidebar ----------
 async function refreshSessions() {
   try {
-    const r = await fetch("/api/sessions");
+    const r = await authFetch("/api/sessions");
     if (!r.ok) return;
     const list = await r.json();
     const div = $("sessions");
@@ -144,7 +194,7 @@ function startRun(goal) {
   clearTranscript();
   $("run").disabled = true;
   $("run-status").textContent = "● running";
-  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  const ws = new WebSocket(wsUrl("/ws"));
   activeWS = ws;
   ws.addEventListener("open", () => ws.send(JSON.stringify({type:"goal", goal})));
   ws.addEventListener("message", ev => {
@@ -173,7 +223,7 @@ async function openSession(sid) {
   activeSid = sid;
   history.pushState({sid}, "", "/?s=" + sid);
   clearTranscript();
-  const r = await fetch("/api/trace/" + sid);
+  const r = await authFetch("/api/trace/" + sid);
   if (!r.ok) {
     $("transcript").innerHTML = `<div class=card>Session ${esc(sid)} not found.</div>`;
     return;
@@ -213,7 +263,7 @@ function updateMonitors() {
 
 async function pollHealth() {
   try {
-    const r = await fetch("/api/llm_health");
+    const r = await authFetch("/api/llm_health");
     const d = await r.json();
     $("led-server").className = "led up";
     $("led-llm").className = "led " + d.llm;
@@ -224,11 +274,28 @@ async function pollHealth() {
   }
 }
 
-setInterval(pollHealth, 5000);
-pollHealth();
-
 // ---------- boot ----------
-const initialSid = new URL(location.href).searchParams.get("s");
-if (initialSid) openSession(initialSid);
-refreshSessions();
-setInterval(refreshSessions, 5000);
+let healthTimer = null, sessionsTimer = null;
+function boot() {
+  if (healthTimer) clearInterval(healthTimer);
+  if (sessionsTimer) clearInterval(sessionsTimer);
+  pollHealth();
+  refreshSessions();
+  healthTimer = setInterval(pollHealth, 5000);
+  sessionsTimer = setInterval(refreshSessions, 5000);
+  const initialSid = new URL(location.href).searchParams.get("s");
+  if (initialSid) openSession(initialSid);
+}
+
+(async () => {
+  let required = false;
+  try {
+    const r = await fetch("/api/auth_required");
+    if (r.ok) required = (await r.json()).required === true;
+  } catch {}
+  if (!required) { boot(); return; }
+  if (authToken && await tryToken(authToken)) { boot(); return; }
+  authToken = "";
+  localStorage.removeItem(TOKEN_KEY);
+  showGate();
+})();
