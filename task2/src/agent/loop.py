@@ -516,6 +516,14 @@ class ReactLoop:
                             "Try a different pattern, a different offset, or call done()."
                         )
                         self._read_grep_dedup_streak += 1
+                        if self._read_grep_dedup_streak >= 2:
+                            self._hidden_tools.add("read_grep")
+                            obs = (
+                                "read_grep is no longer available this turn — it "
+                                "returned only previously-shown lines 3× in a row. "
+                                "Use 'read' with a different offset, list_interactive, "
+                                "or done()."
+                            )
                     else:
                         if hidden > 0:
                             obs = "\n".join(kept) + (
