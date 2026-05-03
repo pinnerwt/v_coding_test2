@@ -55,7 +55,7 @@ uv run python scripts/cost_report.py --all
 [![Ruff](https://img.shields.io/badge/ruff-0.14.14-D7FF64?logo=ruff&logoColor=000)](https://github.com/astral-sh/ruff)
 [![task2 CI](https://github.com/pinnerwt/v_coding_test2/actions/workflows/task2-ci.yml/badge.svg?branch=main)](https://github.com/pinnerwt/v_coding_test2/actions/workflows/task2-ci.yml)
 [![Dependabot](https://img.shields.io/badge/dependabot-not%20configured-lightgrey)]()
-[![Coverage (task2)](https://img.shields.io/badge/coverage-92%25%20line-brightgreen)](#test-coverage)
+[![Coverage (task2)](https://img.shields.io/badge/coverage-92%25%20line-brightgreen)](artifacts/coverage.xml)
 
 This repo is a second-pass attempt at the three tasks defined in [`AI-Coding-Test-EN.md`](AI-Coding-Test-EN.md) (Chinese: [`AI-Coding-Test-ZH.md`](AI-Coding-Test-ZH.md)). It deliberately drops the openspec/CI scaffolding from the [first trial](https://github.com/pinnerwt/v_coding_test) and focuses on success rate / latency / token usage of the task 2 agent. The whole repo is **test-driven**; see [`CLAUDE.md`](CLAUDE.md) for operating rules.
 
@@ -107,7 +107,7 @@ See [`task2/README.md`](task2/README.md) for env vars, Docker, Zeabur, and archi
 
 ## CI/CD
 
-[`task2-ci.yml`](.github/workflows/task2-ci.yml) runs on pushes to `main` and PRs targeting `main` that touch `task2/**` or the workflow itself. It installs `uv`, syncs deps with `--frozen`, installs Chromium for Playwright, then runs `ruff check`, `ruff format --check`, and `pytest --cov=agent --cov-report=xml`. The XML coverage report is uploaded as the `task2-coverage` artifact. Concurrency is keyed by ref so superseded runs cancel themselves.
+[`task2-ci.yml`](.github/workflows/task2-ci.yml) runs on pushes to `main` and PRs targeting `main` that touch `task2/**` or the workflow itself. It installs `uv`, syncs deps with `--frozen`, installs Chromium for Playwright, then runs `ruff check`, `ruff format --check`, and `pytest --cov=agent --cov-report=xml:../artifacts/coverage.xml`. The XML report is committed at [`artifacts/coverage.xml`](artifacts/coverage.xml) (also uploaded as the `task2-coverage` workflow artifact). Concurrency is keyed by ref so superseded runs cancel themselves.
 
 ## Dependabot
 
@@ -115,14 +115,14 @@ Not configured. The first trial had weekly `uv` + `github-actions` updates under
 
 ## Test coverage
 
-Latest local run: **92% line coverage** across `task2/src/agent` (242 tests). Regenerate with:
+Latest run: **92% line coverage** across `task2/src/agent` (242 tests). Snapshot lives at [`artifacts/coverage.xml`](artifacts/coverage.xml). Regenerate with:
 
 ```bash
 cd task2
-uv run pytest --cov=agent --cov-report=term --cov-report=xml
+uv run pytest --cov=agent --cov-report=term --cov-report=xml:../artifacts/coverage.xml
 ```
 
-CI also produces `coverage.xml` on every PR — download it from the run's `task2-coverage` artifact.
+CI overwrites the same file on every PR and also uploads it as the `task2-coverage` workflow artifact.
 
 ## Prompts
 
