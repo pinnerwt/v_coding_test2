@@ -194,6 +194,7 @@ class ReactLoop:
         self._goal = goal
         state = "none"  # none | hinted | asked | giveup
         for step_idx in range(self.max_steps):
+            issue_url = self._current_url()
             if step_idx == self.max_steps - 1:
                 url = self._current_url()
                 url_notes = self.notes.get(url) if self.notes else ""
@@ -272,7 +273,7 @@ class ReactLoop:
                 )
 
             tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
-            url = self._current_url()
+            url = issue_url
             url_notes = self.notes.get(url) if self.notes else ""
             replan_hint = _REPLAN_HINT if state == "hinted" else None
             messages = build_messages(
@@ -298,7 +299,15 @@ class ReactLoop:
                     f"tool {e.name!r} is not available right now (masked or "
                     f"unknown). Pick from: {sorted(e.allowed)!r}."
                 )
-                self.tape.append({"reason": "", "action": e.name, "args": {}, "obs": obs})
+                self.tape.append(
+                    {
+                        "reason": "",
+                        "action": e.name,
+                        "args": {},
+                        "obs": obs,
+                        "url": issue_url,
+                    }
+                )
                 self.trace.write(
                     {
                         "type": "step",
@@ -308,6 +317,7 @@ class ReactLoop:
                             "action": e.name,
                             "args": {},
                             "obs": obs,
+                            "url": issue_url,
                         },
                     }
                 )
@@ -356,6 +366,7 @@ class ReactLoop:
                         "args": args,
                         "reason": "",
                         "obs": obs,
+                        "url": issue_url,
                     }
                 )
                 self.trace.write(
@@ -367,6 +378,7 @@ class ReactLoop:
                             "args": args,
                             "reason": "",
                             "obs": obs,
+                            "url": issue_url,
                         },
                     }
                 )
@@ -504,6 +516,7 @@ class ReactLoop:
                             "action": name,
                             "args": args,
                             "obs": obs,
+                            "url": issue_url,
                         }
                     )
                     if new_fp in earlier_fps:
@@ -519,6 +532,7 @@ class ReactLoop:
                                 "action": name,
                                 "args": args,
                                 "obs": obs,
+                                "url": issue_url,
                             },
                         }
                     )
@@ -580,6 +594,7 @@ class ReactLoop:
                             "action": name,
                             "args": args,
                             "obs": f"done({d.status})",
+                            "url": issue_url,
                         },
                     }
                 )
@@ -597,7 +612,15 @@ class ReactLoop:
             obs_str = obs if isinstance(obs, str) else json.dumps(obs)
             new_fp = _obs_fingerprint(obs_str)
             earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in self.tape}
-            self.tape.append({"reason": reason, "action": name, "args": args, "obs": obs_str})
+            self.tape.append(
+                {
+                    "reason": reason,
+                    "action": name,
+                    "args": args,
+                    "obs": obs_str,
+                    "url": issue_url,
+                }
+            )
             if new_fp in earlier_fps:
                 self.no_progress_streak += 1
             else:
@@ -611,6 +634,7 @@ class ReactLoop:
                         "action": name,
                         "args": args,
                         "obs": obs_str,
+                        "url": issue_url,
                     },
                 }
             )
