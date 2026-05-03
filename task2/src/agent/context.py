@@ -46,6 +46,34 @@ def _novelty_line(tape: list[dict[str, Any]]) -> str | None:
     return f"Novel observations in last {NOVELTY_WINDOW} steps: {novel}/{NOVELTY_WINDOW}"
 
 
+def _action_call_str(action: str, args: dict) -> str:
+    """Render `action(arg1=v1, arg2=v2)` for the most-discriminating args.
+    Skip None / empty / very-long values. ~60-char target."""
+    if not args:
+        return f"{action}()"
+    parts = []
+    for k, v in args.items():
+        if v in (None, "", []):
+            continue
+        sval = json.dumps(v, ensure_ascii=False)
+        if len(sval) > 40:
+            sval = sval[:37] + "..."
+        parts.append(f"{k}={sval}")
+    return f"{action}({', '.join(parts)})"
+
+
+def _render_narrative(tape: list[dict[str, Any]]) -> str:
+    if not tape:
+        return ""
+    lines = ["## Action history"]
+    for i, step in enumerate(tape):
+        url = step.get("url", "")
+        call = _action_call_str(step.get("action", ""), step.get("args", {}))
+        reason = step.get("reason", "")
+        lines.append(f"step {i} | {url} | {call} | {reason}")
+    return "\n".join(lines)
+
+
 def build_messages(
     *,
     system: str,
@@ -63,6 +91,11 @@ def build_messages(
     if replan_hint:
         sys_parts.append("")
         sys_parts.append(replan_hint)
+
+    narrative = _render_narrative(tape)
+    if narrative:
+        sys_parts.append("")
+        sys_parts.append(narrative)
 
     user_parts = [f"Goal: {goal}"]
     if qa:
