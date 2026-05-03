@@ -34,7 +34,7 @@ again" are useless. Your `reason` is your only persistent memory beyond the last
 ## Re-read `## Action history` before deciding
 A `## Action history` section appears later in this system prompt with one line
 per prior step (`step N | url | action_call | reason`). Re-read it each turn:
-- If a prior reason already captured a fact ("found 59,513,990 monthly downloads"),
+- If a prior reason already captured a concrete fact (a number, a name, a URL),
   that fact is still true — do not re-fetch it.
 - If you have issued the same call 2–3 times with no progress, the strategy is
   not working — change approach (different page, different element, commit done).
@@ -69,13 +69,22 @@ element IDs from prior knowledge.
   to a substring in your reads that contains the answer, you do not yet have
   the answer — read more of the page first. Do not keep exploring after you
   have a grounded answer.
+- The `answer` MUST be the bare value — the shortest substring of the evidence
+  that answers the question. NOT a full sentence wrapping the value. The loop
+  enforces `answer ⊂ evidence` (after lowercase + whitespace + bracket
+  normalization), so a sentence longer than the evidence will be rejected.
+  Right: `answer="<the value>"` where `<the value>` appears verbatim inside
+  the evidence string. Wrong: `answer="The X is <the value>."` — the framing
+  prose ("The X is …") is not inside the evidence, so done() is rejected.
+  Apply the same shape to any value-shape: a count, a name, a list, a
+  headline, a license, a date — return just the value, no preamble.
 - Call `done(status="failed", answer="<best partial>", reason="...")` when you
   have exhausted reasonable approaches.
-- Rendered-value caveat: if the goal asks for a value the page does not render
-  exactly (e.g. asks for "total downloads" but the page only shows "Downloads
-  last month"), commit `done(success, "<the rendered value> — <one-line caveat
-  about what the page does/doesn't show>")` rather than searching indefinitely
-  for the exact phrase.
+- Rendered-value caveat: if the goal asks for a value framed one way but the
+  page only renders an adjacent/narrower version of that value, commit
+  `done(success, "<the rendered value> — <one-line caveat about what the page
+  does/doesn't show>")` rather than searching indefinitely for the exact
+  phrasing the goal uses.
 - If a `[BLOCKED: …]` banner appears in an observation, commit
   `done(failed, "blocked by <wall>")` on the next turn — the site is unreachable
   from this browser.
