@@ -21,6 +21,21 @@ def test_truncate_respects_custom_cap():
     assert out == {"truncated": "y" * 10, "original_chars": 50}
 
 
+def test_truncate_passes_through_non_strings():
+    assert truncate_for_log(42) == 42
+    assert truncate_for_log(None) is None
+    assert truncate_for_log({"a": 1}) == {"a": 1}
+
+
+def test_truncate_boundary_at_exact_cap_passes_through():
+    s = "z" * 10
+    assert truncate_for_log(s, max_chars=10) == s
+
+
+def test_truncate_empty_string_passes_through():
+    assert truncate_for_log("") == ""
+
+
 def test_writer_creates_parent_dir_and_appends_jsonl(tmp_path: Path):
     p = tmp_path / "deep" / "nested" / "abc.llm.jsonl"
     w = LLMTraceWriter(p)
