@@ -213,3 +213,32 @@ async def test_select_option_failure_fast():
         assert elapsed < 10.0, f"select_option took {elapsed:.1f}s; expected <10s"
     finally:
         await s.close()
+
+
+HTML_LINKS = """<!doctype html><html><body>
+<a href="/foo">Foo</a>
+<a href="https://example.com/bar">Bar</a>
+<a>NoHref</a>
+</body></html>"""
+
+
+@pytest.mark.asyncio
+async def test_snapshot_link_exposes_href():
+    """Link entries must expose `href` resolved against the page URL.
+    Without this, the goto-grounding guard cannot allow a goto to a URL
+    that only ever appears as an anchor target (case 107: HF autocomplete
+    rendered model name as text but URL was never in any obs)."""
+    s = BrowserSession()
+    await s.start()
+    try:
+        url = "data:text/html;base64," + base64.b64encode(HTML_LINKS.encode()).decode()
+        tools = build_browser_tools(s, restrict_goto=False)
+        await tools["goto"](url=url)
+        snap = json.loads(await tools["list_interactive"]())
+        links = {e["name"]: e for e in snap if e["role"] == "link"}
+        assert links["Foo"]["href"].endswith("/foo"), links["Foo"]
+        assert links["Bar"]["href"] == "https://example.com/bar", links["Bar"]
+        # Anchor with no href must not crash and must not invent a value.
+        assert "NoHref" not in links, links
+    finally:
+        await s.close()

@@ -99,29 +99,43 @@ class BrowserSession:
                     continue
                 eid = next_id
                 try:
-                    await cdp.send(
-                        "Runtime.callFunctionOn",
-                        {
-                            "functionDeclaration": (
-                                "function(id){ this.setAttribute('data-agent-eid', id);}"
-                            ),
-                            "objectId": object_id,
-                            "arguments": [{"value": str(eid)}],
-                        },
-                    )
-                except Exception:
-                    continue
+                    try:
+                        await cdp.send(
+                            "Runtime.callFunctionOn",
+                            {
+                                "functionDeclaration": (
+                                    "function(id){ this.setAttribute('data-agent-eid', id);}"
+                                ),
+                                "objectId": object_id,
+                                "arguments": [{"value": str(eid)}],
+                            },
+                        )
+                    except Exception:
+                        continue
+                    name = (node.get("name") or {}).get("value", "") or ""
+                    entry: dict[str, Any] = {"id": eid, "role": role, "name": name}
+                    value_obj = node.get("value")
+                    if value_obj is not None:
+                        entry["value"] = value_obj.get("value")
+                    if role == "link":
+                        with contextlib.suppress(Exception):
+                            href = await cdp.send(
+                                "Runtime.callFunctionOn",
+                                {
+                                    "functionDeclaration": "function(){ return this.href || ''; }",
+                                    "objectId": object_id,
+                                    "returnByValue": True,
+                                },
+                            )
+                            raw = (href.get("result") or {}).get("value") or ""
+                            if raw:
+                                entry["href"] = raw
+                    flat.append(entry)
+                    self._element_map[eid] = self.page.locator(f'[data-agent-eid="{eid}"]')
+                    next_id += 1
                 finally:
                     with contextlib.suppress(Exception):
                         await cdp.send("Runtime.releaseObject", {"objectId": object_id})
-                name = (node.get("name") or {}).get("value", "") or ""
-                entry: dict[str, Any] = {"id": eid, "role": role, "name": name}
-                value_obj = node.get("value")
-                if value_obj is not None:
-                    entry["value"] = value_obj.get("value")
-                flat.append(entry)
-                self._element_map[eid] = self.page.locator(f'[data-agent-eid="{eid}"]')
-                next_id += 1
         finally:
             await cdp.detach()
 
