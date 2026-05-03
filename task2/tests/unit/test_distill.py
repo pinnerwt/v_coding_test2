@@ -154,9 +154,7 @@ async def test_distill_passes_prior_note_into_prompt(tmp_path):
 
     async def handler(request):
         captured["body"] = json.loads(request.content)
-        return httpx.Response(
-            200, json={"choices": [{"message": {"content": "- new fact"}}]}
-        )
+        return httpx.Response(200, json={"choices": [{"message": {"content": "- new fact"}}]})
 
     llm = LLMClient(
         base_url="http://test/v1",

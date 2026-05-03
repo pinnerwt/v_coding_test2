@@ -1348,9 +1348,7 @@ async def test_loop_recovers_from_hallucinated_tool_name(tmp_path, hallucinated_
         f"expected hallucinated {hallucinated_name!r} to be recorded as a "
         f"feedback step, got tape actions {captured_tape_actions!r}"
     )
-    feedback_step = next(
-        t for t in loop.tape if t["action"] == hallucinated_name
-    )
+    feedback_step = next(t for t in loop.tape if t["action"] == hallucinated_name)
     assert "not available" in feedback_step["obs"]
     assert result == {"status": "success", "answer": "ok"}
 

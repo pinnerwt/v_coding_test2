@@ -54,8 +54,7 @@ async def distill_page_knowledge(
             + ("\n".join(f"- {r}" for r in reason_log) or "(none)")
             + "\n\nFull tape:\n"
             + "\n".join(
-                f"- {s.get('action')}({s.get('args')}) → "
-                f"{(s.get('obs') or '')[:200]!r}"
+                f"- {s.get('action')}({s.get('args')}) → {(s.get('obs') or '')[:200]!r}"
                 for s in tape
             )
         )
@@ -72,6 +71,4 @@ async def distill_page_knowledge(
         notes.set(url, text)
     except Exception as e:
         if trace is not None:
-            trace.write(
-                {"type": "distill_failed", "payload": {"error": str(e)[:200]}}
-            )
+            trace.write({"type": "distill_failed", "payload": {"error": str(e)[:200]}})

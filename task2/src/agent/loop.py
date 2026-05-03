@@ -298,9 +298,7 @@ class ReactLoop:
                     f"tool {e.name!r} is not available right now (masked or "
                     f"unknown). Pick from: {sorted(e.allowed)!r}."
                 )
-                self.tape.append(
-                    {"thought": "", "action": e.name, "args": {}, "obs": obs}
-                )
+                self.tape.append({"thought": "", "action": e.name, "args": {}, "obs": obs})
                 self.trace.write(
                     {
                         "type": "step",

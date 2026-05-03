@@ -73,9 +73,7 @@ def _scripted_transport(tool_calls, distill_text: str | None, distill_status: in
             return httpx.Response(
                 200,
                 json={
-                    "choices": [
-                        {"message": {"role": "assistant", "content": distill_text or ""}}
-                    ]
+                    "choices": [{"message": {"role": "assistant", "content": distill_text or ""}}]
                 },
             )
         try:
@@ -317,11 +315,7 @@ async def test_distill_runs_after_no_progress_force_done(tmp_path):
             # Distillation call (free-form, no tools).
             return httpx.Response(
                 200,
-                json={
-                    "choices": [
-                        {"message": {"role": "assistant", "content": distill_payload}}
-                    ]
-                },
+                json={"choices": [{"message": {"role": "assistant", "content": distill_payload}}]},
             )
         # Did force-done call coerce_done_via_llm? It pins tool_choice to
         # the named done function. Use that as the discriminator.
