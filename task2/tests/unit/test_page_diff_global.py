@@ -74,14 +74,14 @@ def test_should_inject_diff_no_change_returns_false():
     assert should_inject_diff(previous="same", current="same", threshold=500) is False
 
 
-def test_should_inject_diff_threshold_50_admits_30_line_diff():
+def test_should_inject_diff_threshold_50_rejects_60_line_diff():
     prev = "\n".join(f"old {i}" for i in range(30))
     curr = "\n".join(f"new {i}" for i in range(30))
     # 30 removed + 30 added = 60 → too big.
     assert should_inject_diff(previous=prev, current=curr, threshold=50) is False
 
 
-def test_should_inject_diff_threshold_50_admits_25_line_change():
+def test_should_inject_diff_threshold_50_admits_exactly_at_boundary():
     prev = "\n".join(f"L{i}" for i in range(50))
     curr_lines = [f"L{i}" for i in range(50)]
     for i in range(25):
