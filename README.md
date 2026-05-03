@@ -53,7 +53,7 @@ uv run python scripts/cost_report.py --all
 [![Python](https://img.shields.io/badge/python-3.11-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![uv](https://img.shields.io/badge/uv-0.9.3-261230?logo=python&logoColor=white)](https://github.com/astral-sh/uv)
 [![Ruff](https://img.shields.io/badge/ruff-0.14.14-D7FF64?logo=ruff&logoColor=000)](https://github.com/astral-sh/ruff)
-[![task2 CI](https://github.com/pinnerwt/v_coding_test2/actions/workflows/task2-ci.yml/badge.svg?branch=main)](https://github.com/pinnerwt/v_coding_test2/actions/workflows/task2-ci.yml)
+[![task2 CI](https://github.com/pinnerwt/v_coding_test2/actions/workflows/task2-ci.yml/badge.svg?branch=dev)](https://github.com/pinnerwt/v_coding_test2/actions/workflows/task2-ci.yml)
 [![Dependabot](https://img.shields.io/badge/Dependabot-enabled-025E8C?logo=dependabot&logoColor=white)](.github/dependabot.yml)
 [![Coverage (task2)](https://img.shields.io/badge/coverage-92%25%20line-brightgreen)](artifacts/coverage.xml)
 
@@ -107,7 +107,7 @@ See [`task2/README.md`](task2/README.md) for env vars, Docker, Zeabur, and archi
 
 ## CI/CD
 
-[`task2-ci.yml`](.github/workflows/task2-ci.yml) runs on pushes to `main` and PRs targeting `main` that touch `task2/**` or the workflow itself. It installs `uv`, syncs deps with `--frozen`, installs Chromium for Playwright, then runs `ruff check`, `ruff format --check`, and `pytest --cov=agent --cov-report=xml:../artifacts/coverage.xml`. The XML report is committed at [`artifacts/coverage.xml`](artifacts/coverage.xml) (also uploaded as the `task2-coverage` workflow artifact). Concurrency is keyed by ref so superseded runs cancel themselves.
+[`task2-ci.yml`](.github/workflows/task2-ci.yml) runs on pushes to `main` or `dev` and on PRs targeting `main` that touch `task2/**` or the workflow itself. It installs `uv`, syncs deps with `--frozen`, installs Chromium for Playwright, then runs `ruff check`, `ruff format --check`, and `pytest --cov=agent --cov-report=xml:../artifacts/coverage.xml`. The XML report is committed at [`artifacts/coverage.xml`](artifacts/coverage.xml) (also uploaded as the `task2-coverage` workflow artifact). Concurrency is keyed by ref so superseded runs cancel themselves. The badge tracks `dev` until the first PR merges to `main`.
 
 ## Dependabot
 
