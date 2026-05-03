@@ -52,7 +52,7 @@ async def test_replan_hint_fires_on_alternating_actions_with_stale_obs(tmp_path)
                                 {
                                     "id": "c",
                                     "type": "function",
-                                    "function": {"name": name, "arguments": "{}"},
+                                    "function": {"name": name, "arguments": '{"reason": "x"}'},
                                 }
                             ],
                         }
@@ -121,7 +121,7 @@ async def test_no_progress_streak_forces_done_failed(tmp_path):
                                 {
                                     "id": "c",
                                     "type": "function",
-                                    "function": {"name": name, "arguments": "{}"},
+                                    "function": {"name": name, "arguments": '{"reason": "x"}'},
                                 }
                             ],
                         }

@@ -27,7 +27,7 @@ def _canned_responses():
                             "function": {
                                 "name": "done",
                                 "arguments": json.dumps(
-                                    {"thought": "trivial", "status": "success", "answer": "ok"}
+                                    {"reason": "trivial", "status": "success", "answer": "ok"}
                                 ),
                             },
                         }

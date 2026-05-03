@@ -267,9 +267,9 @@ async def test_snapshot_textbox_placeholder():
         snap = json.loads(await tools["list_interactive"]())
         textboxes = [e for e in snap if e["role"] in ("textbox", "searchbox")]
         with_ph = [e for e in textboxes if "placeholder" in e]
-        assert any(
-            e["placeholder"] == "Search models, datasets, users…" for e in with_ph
-        ), textboxes
+        assert any(e["placeholder"] == "Search models, datasets, users…" for e in with_ph), (
+            textboxes
+        )
         # An input with no placeholder attribute must not have the field.
         bare = [e for e in textboxes if "placeholder" not in e]
         assert bare, "expected at least one textbox without placeholder"

@@ -123,7 +123,7 @@ def build_messages(
         msgs.append(
             {
                 "role": "assistant",
-                "content": step.get("thought", ""),
+                "content": step.get("reason", ""),
                 "tool_calls": [
                     {
                         "id": tool_call_id,

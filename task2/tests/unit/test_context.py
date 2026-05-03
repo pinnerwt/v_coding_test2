@@ -5,7 +5,7 @@ def test_older_tape_with_empty_obs_does_not_crash():
     """Tools may return '' (e.g. some no-op observations). Once such a step
     falls into the older-tape summary window, _short used to crash with
     IndexError because ''.splitlines() == []. Caught Wolfram bench at step 15."""
-    tape = [{"thought": "", "action": "read", "args": {}, "obs": ""} for _ in range(10)]
+    tape = [{"reason": "", "action": "read", "args": {}, "obs": ""} for _ in range(10)]
     msgs = build_messages(
         system="SYS",
         goal="g",
@@ -20,7 +20,7 @@ def test_older_tape_with_empty_obs_does_not_crash():
 
 
 def test_ordering_and_compression():
-    tape = [{"thought": f"t{i}", "action": "read", "args": {}, "obs": f"o{i}"} for i in range(12)]
+    tape = [{"reason": f"t{i}", "action": "read", "args": {}, "obs": f"o{i}"} for i in range(12)]
     msgs = build_messages(
         system="SYS",
         goal="buy soap",

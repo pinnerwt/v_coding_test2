@@ -111,10 +111,10 @@ async def test_server_threads_visit_trail_into_allowlist(tmp_path, monkeypatch):
     # visit trail, not in goal/tape/current_url).
     script = iter(
         [
-            ("click", {"id": 1}),
-            ("goto", {"url": "https://elsewhere.test/"}),
-            ("goto", {"url": discovered}),
-            ("done", {"status": "succeeded", "answer": "ok"}),
+            ("click", {"id": 1, "reason": "x"}),
+            ("goto", {"url": "https://elsewhere.test/", "reason": "x"}),
+            ("goto", {"url": discovered, "reason": "x"}),
+            ("done", {"status": "succeeded", "answer": "ok", "reason": "x"}),
         ]
     )
 

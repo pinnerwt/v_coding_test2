@@ -44,8 +44,8 @@ async def test_canirun_no_read_loop(tmp_path):
     browser = _Browser(CANIRUN_TEXT)
 
     # Script: 10 read({offset:0}) calls, then done().
-    scripted = [("read", {"offset": 0, "thought": f"r{i}"}) for i in range(10)]
-    scripted.append(("done", {"status": "success", "answer": "Gemma 4 E4B IT"}))
+    scripted = [("read", {"offset": 0, "reason": f"r{i}"}) for i in range(10)]
+    scripted.append(("done", {"status": "success", "answer": "Gemma 4 E4B IT", "reason": "x"}))
 
     it = iter(scripted)
 
@@ -81,7 +81,7 @@ async def test_canirun_no_read_loop(tmp_path):
     qc = QuestionChannel()
     meta = build_meta_tools(question_channel=qc)
 
-    async def read(offset: int = 0, thought: str = ""):
+    async def read(offset: int = 0, reason: str = ""):
         body = await browser.page.evaluate("")
         return body[offset : offset + 2000]
 
@@ -93,7 +93,7 @@ async def test_canirun_no_read_loop(tmp_path):
                 "type": "object",
                 "properties": {
                     "offset": {"type": "integer"},
-                    "thought": {"type": "string"},
+                    "reason": {"type": "string"},
                 },
             },
             read,

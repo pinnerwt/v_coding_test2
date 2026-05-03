@@ -298,13 +298,13 @@ class ReactLoop:
                     f"tool {e.name!r} is not available right now (masked or "
                     f"unknown). Pick from: {sorted(e.allowed)!r}."
                 )
-                self.tape.append({"thought": "", "action": e.name, "args": {}, "obs": obs})
+                self.tape.append({"reason": "", "action": e.name, "args": {}, "obs": obs})
                 self.trace.write(
                     {
                         "type": "step",
                         "payload": {
                             "n": step_idx,
-                            "thought": "",
+                            "reason": "",
                             "action": e.name,
                             "args": {},
                             "obs": obs,
@@ -341,7 +341,35 @@ class ReactLoop:
             tc = tool_calls[0]
             name = tc["function"]["name"]
             args = json.loads(tc["function"]["arguments"] or "{}")
-            thought = args.pop("thought", "") if isinstance(args, dict) else ""
+            reason = args.pop("reason", "") if isinstance(args, dict) else ""
+
+            if not reason:
+                obs = (
+                    f"ERROR: tool {name!r} called without `reason` field. The reason "
+                    "field is mandatory: 1-3 sentences capturing what you just observed "
+                    "and why you chose this action. Retry with reason."
+                )
+                self.tape.append(
+                    {
+                        "action": name,
+                        "args": args,
+                        "reason": "",
+                        "obs": obs,
+                    }
+                )
+                self.trace.write(
+                    {
+                        "type": "step",
+                        "payload": {
+                            "n": step_idx,
+                            "action": name,
+                            "args": args,
+                            "reason": "",
+                            "obs": obs,
+                        },
+                    }
+                )
+                continue
 
             last_aa = self._last_action_args()
             new_aa = _action_key(name, args)
@@ -471,7 +499,7 @@ class ReactLoop:
                     earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in self.tape}
                     self.tape.append(
                         {
-                            "thought": thought,
+                            "reason": reason,
                             "action": name,
                             "args": args,
                             "obs": obs,
@@ -486,7 +514,7 @@ class ReactLoop:
                             "type": "step",
                             "payload": {
                                 "n": step_idx,
-                                "thought": thought,
+                                "reason": reason,
                                 "action": name,
                                 "args": args,
                                 "obs": obs,
@@ -547,7 +575,7 @@ class ReactLoop:
                         "type": "step",
                         "payload": {
                             "n": step_idx,
-                            "thought": thought,
+                            "reason": reason,
                             "action": name,
                             "args": args,
                             "obs": f"done({d.status})",
@@ -568,7 +596,7 @@ class ReactLoop:
             obs_str = obs if isinstance(obs, str) else json.dumps(obs)
             new_fp = _obs_fingerprint(obs_str)
             earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in self.tape}
-            self.tape.append({"thought": thought, "action": name, "args": args, "obs": obs_str})
+            self.tape.append({"reason": reason, "action": name, "args": args, "obs": obs_str})
             if new_fp in earlier_fps:
                 self.no_progress_streak += 1
             else:
@@ -578,7 +606,7 @@ class ReactLoop:
                     "type": "step",
                     "payload": {
                         "n": step_idx,
-                        "thought": thought,
+                        "reason": reason,
                         "action": name,
                         "args": args,
                         "obs": obs_str,

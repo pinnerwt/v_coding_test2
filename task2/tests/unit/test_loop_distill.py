@@ -38,7 +38,7 @@ class _StubBrowser:
 
 
 def _build_read_tool(browser, *, read_limit=1600):
-    async def read(offset: int = 0, thought: str = ""):
+    async def read(offset: int = 0, reason: str = ""):
         text = await browser.page.evaluate("document.body.innerText")
         return text[offset : offset + read_limit]
 
@@ -49,7 +49,7 @@ def _build_read_tool(browser, *, read_limit=1600):
             "type": "object",
             "properties": {
                 "offset": {"type": "integer"},
-                "thought": {"type": "string"},
+                "reason": {"type": "string"},
             },
         },
         read,
@@ -148,8 +148,8 @@ async def test_distill_runs_after_done_success(tmp_path):
     browser = _StubBrowser("page body")
     transport = _scripted_transport(
         [
-            ("read", {"offset": 0, "thought": "look"}),
-            ("done", {"status": "success", "answer": "the value"}),
+            ("read", {"offset": 0, "reason": "look"}),
+            ("done", {"status": "success", "answer": "the value", "reason": "x"}),
         ],
         distill_text="- distilled fact A\n- distilled fact B",
     )
@@ -169,7 +169,7 @@ async def test_distill_runs_after_done_failed(tmp_path):
     browser = _StubBrowser("page body")
     transport = _scripted_transport(
         [
-            ("done", {"status": "failed", "answer": "blocked"}),
+            ("done", {"status": "failed", "answer": "blocked", "reason": "x"}),
         ],
         distill_text="- this URL is unreachable behind a wall",
     )
@@ -189,7 +189,7 @@ async def test_distill_failure_does_not_corrupt_result(tmp_path):
     browser = _StubBrowser("page body")
     transport = _scripted_transport(
         [
-            ("done", {"status": "success", "answer": "kept"}),
+            ("done", {"status": "success", "answer": "kept", "reason": "x"}),
         ],
         distill_text=None,
         distill_status=500,
@@ -254,9 +254,9 @@ async def test_distill_runs_after_max_steps_force_done(tmp_path):
     transport = _scripted_transport(
         [
             # Step 0: regular tool call.
-            ("read", {"offset": 0, "thought": "look"}),
+            ("read", {"offset": 0, "reason": "look"}),
             # Step 1 = max_steps - 1: coerce_done_via_llm forces done().
-            ("done", {"status": "failed", "answer": "ran out of steps"}),
+            ("done", {"status": "failed", "answer": "ran out of steps", "reason": "x"}),
         ],
         distill_text="- max-steps distilled fact",
     )

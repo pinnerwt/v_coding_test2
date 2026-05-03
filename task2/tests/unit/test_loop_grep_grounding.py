@@ -102,8 +102,8 @@ async def test_loop_blocks_ungrounded_read_grep_and_skips_dispatch(tmp_path):
 
     transport = _mock_calls(
         [
-            ("read_grep", {"pattern": "9", "thought": "looking for the answer"}),
-            ("done", {"status": "failed", "answer": "blocked"}),
+            ("read_grep", {"pattern": "9", "reason": "looking for the answer"}),
+            ("done", {"status": "failed", "answer": "blocked", "reason": "x"}),
         ]
     )
     llm = LLMClient("http://t/v1", "m", transport=transport)
@@ -117,7 +117,7 @@ async def test_loop_blocks_ungrounded_read_grep_and_skips_dispatch(tmp_path):
                 "properties": {
                     "pattern": {"type": "string"},
                     "window": {"type": "integer", "default": 200},
-                    "thought": {"type": "string"},
+                    "reason": {"type": "string"},
                 },
                 "required": ["pattern"],
             },
@@ -176,8 +176,8 @@ async def test_loop_allows_grounded_read_grep_via_goal(tmp_path):
 
     transport = _mock_calls(
         [
-            ("read_grep", {"pattern": "2018", "thought": "jump to 2018"}),
-            ("done", {"status": "success", "answer": "ok"}),
+            ("read_grep", {"pattern": "2018", "reason": "jump to 2018"}),
+            ("done", {"status": "success", "answer": "ok", "reason": "x"}),
         ]
     )
     llm = LLMClient("http://t/v1", "m", transport=transport)

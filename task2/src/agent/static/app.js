@@ -81,7 +81,7 @@ function renderEvent(ev) {
     el.innerHTML =
       `<div class=summary>${summary}</div>` +
       `<div class=detail>` +
-      (p.thought ? `<div class=thought>${esc(p.thought)}</div>` : "") +
+      (p.reason ? `<div class=reason>${esc(p.reason)}</div>` : "") +
       `<pre>${esc(JSON.stringify(p.args, null, 2))}</pre>` +
       `<pre>${esc(p.obs ?? "")}</pre>` +
       `</div>`;

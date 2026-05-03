@@ -63,7 +63,7 @@ def _mock_llm_calls(calls):
 
 
 def _build_read_tool(browser, *, read_limit=1600):
-    async def read(offset: int = 0, thought: str = ""):
+    async def read(offset: int = 0, reason: str = ""):
         text = await browser.page.evaluate("document.body.innerText")
         return text[offset : offset + read_limit]
 
@@ -74,7 +74,7 @@ def _build_read_tool(browser, *, read_limit=1600):
             "type": "object",
             "properties": {
                 "offset": {"type": "integer"},
-                "thought": {"type": "string"},
+                "reason": {"type": "string"},
             },
         },
         read,
@@ -87,9 +87,9 @@ async def test_read_auto_advances_on_repeat(tmp_path):
     browser = _StubBrowser(text)
     transport = _mock_llm_calls(
         [
-            ("read", {"offset": 0, "thought": "first read"}),
-            ("read", {"offset": 0, "thought": "second read at same offset"}),
-            ("done", {"status": "success", "answer": "ok"}),
+            ("read", {"offset": 0, "reason": "first read"}),
+            ("read", {"offset": 0, "reason": "second read at same offset"}),
+            ("done", {"status": "success", "answer": "ok", "reason": "x"}),
         ]
     )
     llm = LLMClient("http://t/v1", "m", transport=transport)
@@ -140,9 +140,9 @@ async def test_read_hidden_after_end_of_page_until_mutation(tmp_path):
     browser = _StubBrowser(short_text)
     transport = _mock_llm_calls(
         [
-            ("read", {"offset": 0, "thought": "first read"}),
-            ("read", {"offset": 0, "thought": "second read; should auto-advance and exhaust"}),
-            ("done", {"status": "success", "answer": "ok"}),
+            ("read", {"offset": 0, "reason": "first read"}),
+            ("read", {"offset": 0, "reason": "second read; should auto-advance and exhaust"}),
+            ("done", {"status": "success", "answer": "ok", "reason": "x"}),
         ]
     )
     # The third LLM call should NOT see `read` in its tool list. We capture
@@ -220,7 +220,7 @@ async def test_small_diff_injected_after_state_change(tmp_path):
                                         "type": "function",
                                         "function": {
                                             "name": "click",
-                                            "arguments": json.dumps({"id": 1}),
+                                            "arguments": json.dumps({"id": 1, "reason": "click"}),
                                         },
                                     }
                                 ],
@@ -245,7 +245,11 @@ async def test_small_diff_injected_after_state_change(tmp_path):
                                         "function": {
                                             "name": "done",
                                             "arguments": json.dumps(
-                                                {"status": "success", "answer": "ok"}
+                                                {
+                                                    "status": "success",
+                                                    "answer": "ok",
+                                                    "reason": "done",
+                                                }
                                             ),
                                         },
                                     }
@@ -263,7 +267,7 @@ async def test_small_diff_injected_after_state_change(tmp_path):
     qc = QuestionChannel()
     meta = build_meta_tools(question_channel=qc)
 
-    async def click(id: int, thought: str = ""):
+    async def click(id: int, reason: str = ""):
         browser.set_text(text_v2)  # mutate page
         return f"clicked id={id}"
 
@@ -273,7 +277,7 @@ async def test_small_diff_injected_after_state_change(tmp_path):
             "click",
             {
                 "type": "object",
-                "properties": {"id": {"type": "integer"}, "thought": {"type": "string"}},
+                "properties": {"id": {"type": "integer"}, "reason": {"type": "string"}},
                 "required": ["id"],
             },
             click,
@@ -376,7 +380,7 @@ async def test_press_key_hidden_when_no_global_diff(tmp_path):
     qc = QuestionChannel()
     meta = build_meta_tools(question_channel=qc)
 
-    async def press_key(key: str, thought: str = ""):
+    async def press_key(key: str, reason: str = ""):
         return f"pressed {key}"  # does not mutate browser text
 
     reg.register(
@@ -385,7 +389,7 @@ async def test_press_key_hidden_when_no_global_diff(tmp_path):
             "press",
             {
                 "type": "object",
-                "properties": {"key": {"type": "string"}, "thought": {"type": "string"}},
+                "properties": {"key": {"type": "string"}, "reason": {"type": "string"}},
                 "required": ["key"],
             },
             press_key,
@@ -429,7 +433,7 @@ async def test_list_interactive_auto_advances(tmp_path):
     pages = ["snap-A", "snap-B", "snap-C"]
     # Each "offset" maps to a different page in our stub.
 
-    async def list_interactive(offset: int = 0, limit: int = 50, thought: str = ""):
+    async def list_interactive(offset: int = 0, limit: int = 50, reason: str = ""):
         idx = offset // limit
         if idx >= len(pages):
             return ""
@@ -439,9 +443,9 @@ async def test_list_interactive_auto_advances(tmp_path):
     browser = _StubBrowser(text)
     transport = _mock_llm_calls(
         [
-            ("list_interactive", {"offset": 0, "limit": 1, "thought": "first"}),
-            ("list_interactive", {"offset": 0, "limit": 1, "thought": "second"}),
-            ("done", {"status": "success", "answer": "ok"}),
+            ("list_interactive", {"offset": 0, "limit": 1, "reason": "first"}),
+            ("list_interactive", {"offset": 0, "limit": 1, "reason": "second"}),
+            ("done", {"status": "success", "answer": "ok", "reason": "x"}),
         ]
     )
     llm = LLMClient("http://t/v1", "m", transport=transport)
@@ -457,7 +461,7 @@ async def test_list_interactive_auto_advances(tmp_path):
                 "properties": {
                     "offset": {"type": "integer"},
                     "limit": {"type": "integer"},
-                    "thought": {"type": "string"},
+                    "reason": {"type": "string"},
                 },
             },
             list_interactive,
@@ -500,13 +504,13 @@ async def test_list_interactive_auto_advance_handles_tool_error(tmp_path):
     the error must be captured as an ERROR obs rather than crashing the loop."""
     browser = _StubBrowser("irrelevant")
 
-    async def list_interactive(offset: int = 0, limit: int = 50, thought: str = ""):
+    async def list_interactive(offset: int = 0, limit: int = 50, reason: str = ""):
         raise RuntimeError("simulated tool failure")
 
     transport = _mock_llm_calls(
         [
-            ("list_interactive", {"offset": 0, "limit": 1, "thought": "first"}),
-            ("done", {"status": "failed", "answer": "tool errored"}),
+            ("list_interactive", {"offset": 0, "limit": 1, "reason": "first"}),
+            ("done", {"status": "failed", "answer": "tool errored", "reason": "x"}),
         ]
     )
     llm = LLMClient("http://t/v1", "m", transport=transport)
@@ -522,7 +526,7 @@ async def test_list_interactive_auto_advance_handles_tool_error(tmp_path):
                 "properties": {
                     "offset": {"type": "integer"},
                     "limit": {"type": "integer"},
-                    "thought": {"type": "string"},
+                    "reason": {"type": "string"},
                 },
             },
             list_interactive,
@@ -565,7 +569,7 @@ async def test_read_grep_dedup_returns_synthetic_when_pattern_repeats(tmp_path):
     text = "the quick brown fox jumps over the lazy dog needle here\n"
     browser = _StubBrowser(text)
 
-    async def read_grep(pattern: str, window: int = 200, thought: str = ""):
+    async def read_grep(pattern: str, window: int = 200, reason: str = ""):
         body = await browser.page.evaluate("document.body.innerText")
         idx = body.lower().find(pattern.lower())
         if idx < 0:
@@ -574,9 +578,9 @@ async def test_read_grep_dedup_returns_synthetic_when_pattern_repeats(tmp_path):
 
     transport = _mock_llm_calls(
         [
-            ("read_grep", {"pattern": "needle", "thought": "first grep"}),
-            ("read_grep", {"pattern": "needle", "thought": "same pattern again"}),
-            ("done", {"status": "success", "answer": "ok"}),
+            ("read_grep", {"pattern": "needle", "reason": "first grep"}),
+            ("read_grep", {"pattern": "needle", "reason": "same pattern again"}),
+            ("done", {"status": "success", "answer": "ok", "reason": "x"}),
         ]
     )
     llm = LLMClient("http://t/v1", "m", transport=transport)
@@ -592,7 +596,7 @@ async def test_read_grep_dedup_returns_synthetic_when_pattern_repeats(tmp_path):
                 "properties": {
                     "pattern": {"type": "string"},
                     "window": {"type": "integer"},
-                    "thought": {"type": "string"},
+                    "reason": {"type": "string"},
                 },
                 "required": ["pattern"],
             },
@@ -640,7 +644,7 @@ async def test_list_interactive_hidden_when_hop_cap_exhausts(tmp_path):
     """
     browser = _StubBrowser("irrelevant")
 
-    async def list_interactive(offset: int = 0, limit: int = 50, thought: str = ""):
+    async def list_interactive(offset: int = 0, limit: int = 50, reason: str = ""):
         # Constant snapshot regardless of offset → every advance is a cache hit.
         return "static-snap"
 
@@ -648,10 +652,10 @@ async def test_list_interactive_hidden_when_hop_cap_exhausts(tmp_path):
     # walks 0→1 (hops 1,2) and exhausts the cap with all visited offsets cached.
     transport = _mock_llm_calls(
         [
-            ("list_interactive", {"offset": 0, "limit": 1, "thought": "first"}),
-            ("list_interactive", {"offset": 0, "limit": 1, "thought": "second"}),
-            ("list_interactive", {"offset": 0, "limit": 1, "thought": "third"}),
-            ("done", {"status": "success", "answer": "ok"}),
+            ("list_interactive", {"offset": 0, "limit": 1, "reason": "first"}),
+            ("list_interactive", {"offset": 0, "limit": 1, "reason": "second"}),
+            ("list_interactive", {"offset": 0, "limit": 1, "reason": "third"}),
+            ("done", {"status": "success", "answer": "ok", "reason": "x"}),
         ]
     )
     captured_tools: list[list[str]] = []
@@ -675,7 +679,7 @@ async def test_list_interactive_hidden_when_hop_cap_exhausts(tmp_path):
                 "properties": {
                     "offset": {"type": "integer"},
                     "limit": {"type": "integer"},
-                    "thought": {"type": "string"},
+                    "reason": {"type": "string"},
                 },
             },
             list_interactive,
@@ -729,9 +733,9 @@ async def test_wall_banner_injected_after_two_consecutive_walls(tmp_path):
 
     transport = _mock_llm_calls(
         [
-            ("read", {"offset": 0, "thought": "first read"}),
-            ("read", {"offset": 0, "thought": "second read, still on wall"}),
-            ("done", {"status": "failed", "answer": "blocked"}),
+            ("read", {"offset": 0, "reason": "first read"}),
+            ("read", {"offset": 0, "reason": "second read, still on wall"}),
+            ("done", {"status": "failed", "answer": "blocked", "reason": "x"}),
         ]
     )
     captured_user: list[str] = []
@@ -789,8 +793,8 @@ async def test_only_done_exposed_on_final_step(tmp_path):
 
     transport = _mock_llm_calls(
         [
-            ("read", {"offset": 0, "thought": "first"}),
-            ("done", {"status": "success", "answer": "best guess on final step"}),
+            ("read", {"offset": 0, "reason": "first"}),
+            ("done", {"status": "success", "answer": "best guess on final step", "reason": "x"}),
         ]
     )
     captured_tools: list[list[str]] = []
@@ -851,9 +855,19 @@ async def test_list_interactive_empty_treated_as_exhausted_on_arrival(tmp_path):
         # Step 0: list_interactive(offset=0) (will return "[]"); step 1: done.
         idx = len(captured_tools) - 1
         if idx == 0:
-            tc_name, tc_args = "list_interactive", {"offset": 0, "limit": 50}
+            tc_name, tc_args = (
+                "list_interactive",
+                {"offset": 0, "limit": 50, "reason": "list"},
+            )
         else:
-            tc_name, tc_args = "done", {"status": "success", "answer": "ok"}
+            tc_name, tc_args = (
+                "done",
+                {
+                    "status": "success",
+                    "answer": "ok",
+                    "reason": "done",
+                },
+            )
         return httpx.Response(
             200,
             json={
@@ -884,7 +898,7 @@ async def test_list_interactive_empty_treated_as_exhausted_on_arrival(tmp_path):
     qc = QuestionChannel()
     meta = build_meta_tools(question_channel=qc)
 
-    async def list_interactive(offset: int = 0, limit: int = 50, thought: str = ""):
+    async def list_interactive(offset: int = 0, limit: int = 50, reason: str = ""):
         return "[]"
 
     reg.register(
@@ -896,7 +910,7 @@ async def test_list_interactive_empty_treated_as_exhausted_on_arrival(tmp_path):
                 "properties": {
                     "offset": {"type": "integer"},
                     "limit": {"type": "integer"},
-                    "thought": {"type": "string"},
+                    "reason": {"type": "string"},
                 },
             },
             list_interactive,
@@ -1031,9 +1045,16 @@ async def test_force_done_on_no_progress_replaces_stuck_message(tmp_path):
             m["content"] for m in body["messages"] if m["role"] == "user"
         )
         if "no novel observation" in body_user_combined:
-            tc_name, tc_args = "done", {"status": "failed", "answer": "no_progress committed"}
+            tc_name, tc_args = (
+                "done",
+                {
+                    "status": "failed",
+                    "answer": "no_progress committed",
+                    "reason": "give up",
+                },
+            )
         else:
-            tc_name, tc_args = "read", {"offset": 0}
+            tc_name, tc_args = "read", {"offset": 0, "reason": "read"}
         return httpx.Response(
             200,
             json={
@@ -1106,9 +1127,16 @@ async def test_force_done_on_asked_after_clarification_replaces_stuck_after_user
         )
         call_count["n"] += 1
         if "User clarification" in body_user_combined:
-            tc_name, tc_args = "done", {"status": "failed", "answer": "asked-giveup committed"}
+            tc_name, tc_args = (
+                "done",
+                {
+                    "status": "failed",
+                    "answer": "asked-giveup committed",
+                    "reason": "give up",
+                },
+            )
         else:
-            tc_name, tc_args = "noop", {}
+            tc_name, tc_args = "noop", {"reason": "noop"}
         return httpx.Response(
             200,
             json={
@@ -1368,9 +1396,16 @@ async def test_loop_reason_call_lands_on_reason_log(tmp_path):
                 captured_user_messages.append(m["content"])
         call_count["n"] += 1
         if call_count["n"] == 1:
-            tc_name, tc_args = "reason", {"text": "hello"}
+            tc_name, tc_args = "reason", {"text": "hello", "reason": "remember this"}
         else:
-            tc_name, tc_args = "done", {"status": "success", "answer": "ok"}
+            tc_name, tc_args = (
+                "done",
+                {
+                    "status": "success",
+                    "answer": "ok",
+                    "reason": "exit",
+                },
+            )
         return httpx.Response(
             200,
             json={

@@ -71,7 +71,7 @@ def build_meta_tool_list(
     return [
         Tool(
             "reason",
-            "Record a short thought you want to remember past the rolling action "
+            "Record a short note you want to remember past the rolling action "
             "window. In-session only — does not persist.",
             {
                 "type": "object",

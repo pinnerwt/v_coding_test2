@@ -23,11 +23,11 @@ def _build(tape):
 
 def test_histogram_shown_when_any_action_repeats():
     tape = [
-        {"thought": "", "action": "click", "args": {"id": 94}, "obs": "clicked id=94"},
-        {"thought": "", "action": "read", "args": {}, "obs": "page A"},
-        {"thought": "", "action": "click", "args": {"id": 94}, "obs": "clicked id=94"},
-        {"thought": "", "action": "read", "args": {"offset": 0}, "obs": "page A"},
-        {"thought": "", "action": "click", "args": {"id": 94}, "obs": "clicked id=94"},
+        {"reason": "", "action": "click", "args": {"id": 94}, "obs": "clicked id=94"},
+        {"reason": "", "action": "read", "args": {}, "obs": "page A"},
+        {"reason": "", "action": "click", "args": {"id": 94}, "obs": "clicked id=94"},
+        {"reason": "", "action": "read", "args": {"offset": 0}, "obs": "page A"},
+        {"reason": "", "action": "click", "args": {"id": 94}, "obs": "clicked id=94"},
     ]
     user = _build(tape)
     assert "Calls so far" in user
@@ -38,9 +38,9 @@ def test_histogram_shown_when_any_action_repeats():
 
 def test_histogram_hidden_when_no_repeats():
     tape = [
-        {"thought": "", "action": "goto", "args": {"url": "https://a"}, "obs": "ok"},
-        {"thought": "", "action": "read", "args": {}, "obs": "page A"},
-        {"thought": "", "action": "list_interactive", "args": {}, "obs": "[]"},
+        {"reason": "", "action": "goto", "args": {"url": "https://a"}, "obs": "ok"},
+        {"reason": "", "action": "read", "args": {}, "obs": "page A"},
+        {"reason": "", "action": "list_interactive", "args": {}, "obs": "[]"},
     ]
     user = _build(tape)
     assert "Calls so far" not in user
@@ -52,14 +52,14 @@ def test_novelty_tally_zero_when_recent_all_seen_before():
 
     tape = [
         # Two seed observations to populate the "earlier" set
-        {"thought": "", "action": "read", "args": {}, "obs": "X"},
-        {"thought": "", "action": "list_interactive", "args": {}, "obs": "Y"},
+        {"reason": "", "action": "read", "args": {}, "obs": "X"},
+        {"reason": "", "action": "list_interactive", "args": {}, "obs": "Y"},
     ]
     # NOVELTY_WINDOW more steps, all yielding obs "X" or "Y" (already seen)
     for i in range(NOVELTY_WINDOW):
         tape.append(
             {
-                "thought": "",
+                "reason": "",
                 "action": "click",
                 "args": {"id": i},
                 "obs": "X" if i % 2 == 0 else "Y",
@@ -73,7 +73,7 @@ def test_novelty_tally_full_when_each_obs_is_new():
     from agent.context import NOVELTY_WINDOW
 
     tape = [
-        {"thought": "", "action": "read", "args": {"offset": k}, "obs": f"chunk-{k}"}
+        {"reason": "", "action": "read", "args": {"offset": k}, "obs": f"chunk-{k}"}
         for k in range(NOVELTY_WINDOW + 2)
     ]
     user = _build(tape)
@@ -84,6 +84,6 @@ def test_novelty_tally_full_when_each_obs_is_new():
 
 
 def test_novelty_tally_hidden_when_tape_too_short():
-    tape = [{"thought": "", "action": "read", "args": {}, "obs": "X"} for _ in range(5)]
+    tape = [{"reason": "", "action": "read", "args": {}, "obs": "X"} for _ in range(5)]
     user = _build(tape)
     assert "Novel observations in last" not in user

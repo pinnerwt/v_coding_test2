@@ -39,7 +39,7 @@ async def test_replan_hint_after_3_repeats(tmp_path):
                                     "type": "function",
                                     "function": {
                                         "name": "noop",
-                                        "arguments": "{}",
+                                        "arguments": '{"reason": "x"}',
                                     },
                                 }
                             ],

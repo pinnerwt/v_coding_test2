@@ -8,17 +8,17 @@ from agent.config import Config
 from agent.server import build_app
 
 CANNED = [
-    ("goto", {"url": "PLACEHOLDER", "thought": "open site"}),
-    ("list_interactive", {"thought": "see elements"}),
-    ("type", {"id": 0, "text": "hello", "submit": False, "thought": "type"}),
-    ("click", {"id": 1, "thought": "search"}),
-    ("read", {"thought": "verify"}),
+    ("goto", {"url": "PLACEHOLDER", "reason": "open site"}),
+    ("list_interactive", {"reason": "see elements"}),
+    ("type", {"id": 0, "text": "hello", "submit": False, "reason": "type"}),
+    ("click", {"id": 1, "reason": "search"}),
+    ("read", {"reason": "verify"}),
     (
         "done",
         {
             "status": "success",
             "answer": "you searched: hello",
-            "thought": "done",
+            "reason": "done",
         },
     ),
 ]

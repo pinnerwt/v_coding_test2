@@ -36,7 +36,9 @@ async def test_loop_emits_usage_and_llm_call_start():
                     "type": "function",
                     "function": {
                         "name": "done",
-                        "arguments": json.dumps({"status": "success", "answer": "ok"}),
+                        "arguments": json.dumps(
+                            {"status": "success", "answer": "ok", "reason": "done"}
+                        ),
                     },
                 }
             ],

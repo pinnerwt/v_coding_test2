@@ -51,7 +51,7 @@ def _mock_calls(calls):
 
 @pytest.mark.asyncio
 async def test_loop_runs_done(tmp_path):
-    transport = _mock_calls([("done", {"status": "success", "answer": "42"})])
+    transport = _mock_calls([("done", {"status": "success", "answer": "42", "reason": "ok"})])
     llm = LLMClient("http://t/v1", "m", transport=transport)
     reg = ToolRegistry()
     qc = QuestionChannel()

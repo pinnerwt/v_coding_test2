@@ -60,9 +60,9 @@ async def test_goto_blocked_when_url_not_in_goal_or_tape(tmp_path, monkeypatch):
     transport = _scripted_llm(
         [
             # Try to jump to an unobserved URL
-            ("goto", {"url": "https://arxiv.org/abs/1406.2661"}),
+            ("goto", {"url": "https://arxiv.org/abs/1406.2661", "reason": "x"}),
             # Then give up
-            ("done", {"status": "failed", "answer": "blocked"}),
+            ("done", {"status": "failed", "answer": "blocked", "reason": "x"}),
         ]
     )
 
