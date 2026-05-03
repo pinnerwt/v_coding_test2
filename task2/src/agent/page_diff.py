@@ -113,9 +113,10 @@ def format_small_diff(*, previous: str, current: str, max_lines: int) -> str:
     return "\n".join([header, *body])
 
 
-def diff_char_size(*, previous: str, current: str) -> int:
-    """Sum of characters added and removed (line-level) between the two
-    strings. Used as the threshold metric for context injection."""
+def diff_line_size(*, previous: str, current: str) -> int:
+    """Count of lines added + lines removed in the unified line-level diff
+    between `previous` and `current`. Used as the threshold metric for
+    context injection."""
     if previous == current:
         return 0
     prev_lines = previous.splitlines(keepends=False)
@@ -125,11 +126,11 @@ def diff_char_size(*, previous: str, current: str) -> int:
         if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
             continue
         if line.startswith("+") or line.startswith("-"):
-            total += len(line) - 1  # strip the leading +/-
+            total += 1
     return total
 
 
 def should_inject_diff(*, previous: str, current: str, threshold: int) -> bool:
     if previous == current:
         return False
-    return diff_char_size(previous=previous, current=current) <= threshold
+    return diff_line_size(previous=previous, current=current) <= threshold

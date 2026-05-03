@@ -1,6 +1,6 @@
 from agent.page_diff import (
     GlobalTextCache,
-    diff_char_size,
+    diff_line_size,
     format_small_diff,
     should_inject_diff,
 )
@@ -43,10 +43,20 @@ def test_format_small_diff_returns_empty_when_no_change():
     assert out == ""
 
 
-def test_diff_char_size_counts_added_plus_removed():
-    size = diff_char_size(previous="abc def\nghi\n", current="abc XYZ\nghi\n")
-    # one removed line "abc def" (7 chars) + one added "abc XYZ" (7 chars) = 14
-    assert size == 14
+def test_diff_line_size_counts_added_plus_removed_lines():
+    # one removed line "abc def", one added "abc XYZ" → 2 lines.
+    assert diff_line_size(previous="abc def\nghi\n", current="abc XYZ\nghi\n") == 2
+
+
+def test_diff_line_size_counts_each_changed_line_once():
+    prev = "a\nb\nc\nd\n"
+    curr = "a\nB\nc\nD\n"
+    # b→B and d→D: 2 removed + 2 added = 4.
+    assert diff_line_size(previous=prev, current=curr) == 4
+
+
+def test_diff_line_size_zero_when_unchanged():
+    assert diff_line_size(previous="x\ny\n", current="x\ny\n") == 0
 
 
 def test_should_inject_diff_below_threshold():
@@ -54,8 +64,9 @@ def test_should_inject_diff_below_threshold():
 
 
 def test_should_inject_diff_above_threshold_returns_false():
-    huge_prev = "x" * 5000
-    huge_curr = "y" * 5000
+    # 1000 distinct lines changed → 2000 added+removed lines, exceeds 500.
+    huge_prev = "\n".join(f"old {i}" for i in range(1000))
+    huge_curr = "\n".join(f"new {i}" for i in range(1000))
     assert should_inject_diff(previous=huge_prev, current=huge_curr, threshold=500) is False
 
 
