@@ -980,7 +980,17 @@ async def test_force_done_at_max_steps_replaces_max_steps_fallback(tmp_path):
         if call_count["n"] in (1, 2):
             tc_name, tc_args = "read", {"offset": 0}
         else:
-            tc_name, tc_args = "done", {"status": "success", "answer": "extracted"}
+            tc_name, tc_args = (
+                "done",
+                {
+                    "status": "success",
+                    "answer": "extracted",
+                    # The read calls above omit `reason`, so each tape entry's
+                    # obs is the missing-reason ERROR string. Cite a stable
+                    # substring of it so coerce_done's evidence check passes.
+                    "evidence": "reason field is mandatory",
+                },
+            )
         return httpx.Response(
             200,
             json={
@@ -1142,7 +1152,14 @@ async def test_loop_recovers_from_hallucinated_tool_name(tmp_path, hallucinated_
         if call_count["n"] == 1:
             tc_name, tc_args = hallucinated_name, {}
         else:
-            tc_name, tc_args = "done", {"status": "success", "answer": "ok"}
+            tc_name, tc_args = (
+                "done",
+                {
+                    "status": "success",
+                    "answer": "ok",
+                    "evidence": "is not available right now",
+                },
+            )
         return httpx.Response(
             200,
             json={
@@ -1293,6 +1310,7 @@ async def test_loop_reason_call_lands_on_reason_log(tmp_path):
 # ---------------------------------------------------------------------------
 # Per-line hash dedup for read_grep (Task 3)
 # ---------------------------------------------------------------------------
+
 
 def _build_real_read_grep_tool(browser):
     """Wrap the real read_grep impl from agent.tools.browser onto the stub
