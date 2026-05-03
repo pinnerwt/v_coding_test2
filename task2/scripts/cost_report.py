@@ -78,12 +78,17 @@ def analyze_sidecar(path: Path, *, prices_table: dict) -> dict[str, Any]:
     hit_tokens = 0
     miss_tokens = 0
     usd = 0.0
+    malformed = 0
     role_chars: dict[str, int] = {"system": 0, "user": 0, "assistant": 0, "tool": 0}
 
     for line in Path(path).read_text().splitlines():
         if not line.strip():
             continue
-        rec = json.loads(line)
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            malformed += 1
+            continue
         calls += 1
         usage = rec.get("response", {}).get("usage") or {}
         prompt_tokens += int(usage.get("prompt_tokens", 0) or 0)
@@ -112,6 +117,7 @@ def analyze_sidecar(path: Path, *, prices_table: dict) -> dict[str, Any]:
         "cache_hit_tokens": hit_tokens,
         "cache_miss_tokens": miss_tokens,
         "usd": usd,
+        "malformed_lines": malformed,
         "role_pct": role_pct,
     }
 
@@ -129,6 +135,8 @@ def _format_report(sid: str, report: dict[str, Any]) -> str:
     lines.append(
         f"  Cache hit: {hit_rate * 100:.1f}% ({report['cache_hit_tokens']:,} / {p:,} prompt tokens)"
     )
+    if report.get("malformed_lines"):
+        lines.append(f"  Malformed lines (skipped): {report['malformed_lines']}")
     lines.append("  Role attribution (by message-content chars):")
     for role in sorted(report["role_pct"], key=lambda r: -report["role_pct"][r]):
         pct = report["role_pct"][role] * 100

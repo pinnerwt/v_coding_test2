@@ -61,3 +61,16 @@ def test_analyze_sidecar_uses_original_chars_for_truncated_content():
     not the truncated prefix length, to role attribution."""
     report = analyze_sidecar(FIXTURE, prices_table=DEFAULT_PRICES)
     assert report["role_pct"]["tool"] > report["role_pct"]["system"]
+
+
+def test_analyze_sidecar_skips_malformed_lines(tmp_path):
+    """A truncated/corrupt last line should be skipped and counted, not crash."""
+    p = tmp_path / "x.llm.jsonl"
+    # One good line, one truncated/corrupt line.
+    good_line = FIXTURE.read_text().splitlines()[0]
+    corrupt_line = '{"call_idx": 99, "request": {"model": "deepseek-chat'  # unterminated
+    p.write_text(good_line + "\n" + corrupt_line + "\n")
+
+    report = analyze_sidecar(p, prices_table=DEFAULT_PRICES)
+    assert report["calls"] == 1
+    assert report["malformed_lines"] == 1

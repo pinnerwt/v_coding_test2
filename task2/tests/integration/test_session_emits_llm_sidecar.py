@@ -110,3 +110,33 @@ async def test_run_sync_does_not_create_phantom_sidecar_session(
     # Exactly one session row for the run we just did. No phantom `*.llm` row.
     assert len(sessions) == 1, f"unexpected extra sessions: {sids}"
     assert not any(sid.endswith(".llm") for sid in sids), sids
+
+
+@pytest.mark.asyncio
+async def test_get_trace_rejects_non_hex_sid(tmp_path: Path, monkeypatch, llm_transport):
+    """Regression: /api/trace/<sid>.llm must NOT serve the sidecar through
+    the trace endpoint."""
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+    app = build_app(cfg=Config.from_env(), data_dir=tmp_path, llm_transport=llm_transport)
+
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.post("/api/run_sync", json={"goal": "say hi"})
+        assert r.status_code == 200
+        # Find the actual sid from the trace dir
+        trace_files = [
+            p for p in (tmp_path / "traces").glob("*.jsonl") if not p.name.endswith(".llm.jsonl")
+        ]
+        assert len(trace_files) == 1
+        sid = trace_files[0].stem
+
+        # Sanity: the legitimate trace request still works
+        r_ok = await ac.get(f"/api/trace/{sid}")
+        assert r_ok.status_code == 200
+
+        # The attack: try to fetch the sidecar via the trace endpoint
+        r_attack = await ac.get(f"/api/trace/{sid}.llm")
+        assert r_attack.status_code == 404, (
+            "trace endpoint must reject non-hex sid; otherwise it serves the sidecar"
+        )

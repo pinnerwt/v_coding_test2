@@ -54,7 +54,7 @@ async def test_sessions_handles_missing_traces_dir(tmp_path):
 async def test_trace_returns_events(tmp_path):
     traces = tmp_path / "traces"
     traces.mkdir()
-    sid = "x1"
+    sid = "0123456789abcdef0123456789abcdef"
     (traces / f"{sid}.jsonl").write_text(
         json.dumps(
             {"type": "session_started", "payload": {"sid": sid, "goal": "g", "started_at": "t"}}

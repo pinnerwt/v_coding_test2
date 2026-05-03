@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 import uuid
 from collections import deque
@@ -26,6 +27,8 @@ from agent.tools.browser import build_browser_tool_list
 from agent.tools.meta import QuestionChannel, build_meta_tool_list
 from agent.tools.registry import ToolRegistry
 from agent.trace import TraceWriter, read_trace
+
+_SID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
 def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> FastAPI:
@@ -178,6 +181,8 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
 
     @app.get("/api/trace/{sid}")
     async def get_trace(sid: str):
+        if not _SID_RE.match(sid):
+            raise HTTPException(status_code=404, detail="not found")
         p = data_dir / "traces" / f"{sid}.jsonl"
         if not p.exists():
             raise HTTPException(status_code=404, detail="not found")
