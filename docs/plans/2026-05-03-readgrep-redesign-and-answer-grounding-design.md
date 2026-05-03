@@ -28,11 +28,21 @@ Two issues observed on the same trace:
 
 ## Part 1 — `read_grep` redesign
 
-### Current shape
+### Current behavior (browser.py:115-125)
 ```python
-async def read_grep(pattern: str, window: int = 200) -> str
+text = await session.page.evaluate("document.body.innerText")
+idx = text.lower().find(pattern.lower())
+if idx < 0:
+    return f"NOT FOUND: {pattern!r}"
+start = max(0, idx - window)
+end = min(len(text), idx + len(pattern) + window)
+return text[start:end]
 ```
-Returns one snippet of ~`window` chars around the *first* match. NO MATCH path returns the page header.
+Specific deficiencies the bench trace surfaced:
+1. **First match only.** Subsequent occurrences invisible. Defeats the structural-navigation use case (long chronological page → find every "2018").
+2. **Match position not marked.** When the match is near offset 0 (Wolfram: `"Definite integral:"` at offset 198), `start=max(0, 198-200)=0`, so the output is `text[0:418]` — byte-identical to `read(offset=0)`'s first 418 chars. The LLM literally cannot distinguish "match found near the top of page" from "no match, returned page header." This is why steps 7–8 in session `51bf0da0` looked like silent failures.
+3. **`NOT FOUND` returns no information.** Just `NOT FOUND: 'X'`. No page length, no vocabulary hint, no offset. LLM has no signal for what to try next.
+4. **`window` is the only knob.** LLM treats it as semantically meaningful; it isn't (only changes snippet width, not which match is returned).
 
 ### New shape
 ```python
@@ -72,6 +82,17 @@ NO MATCH for "x = 9" in page text (761 chars). The text contains:
 
 ## Part 2 — Dedup escalation (A + C)
 
+### Current behavior (loop.py:372-380, 504-512, 249)
+- `_read_grep_seen: dict[str, int]` maps lowercased `pattern` → first-seen `step_idx`.
+- Recorded at `loop.py:504-512`, **but only when `obs` does NOT start with `"NOT FOUND:"`**. Consequence: the LLM can re-call the same NOT-FOUND pattern indefinitely and dedup never fires.
+- Cleared at `loop.py:249` on any page-text mutation, alongside `read_cache` / `list_interactive_cache` / `_hidden_tools`.
+- Synthetic wording: `(pattern "X" already searched at step N, no new matches.)`. Ignores `window`. No escalation, no hide, no streak counter.
+
+### Required additions on top of the existing scaffold
+- Record NOT-FOUND patterns too. Use `self._read_grep_seen` for matched patterns and a parallel `self._read_grep_not_found: dict[str, int]` for misses (or a single dict with a boolean — implementation detail). Dedup synthetic must fire for either.
+- Add `self._read_grep_dedup_streak: int` and the hide-after-K mechanism described below.
+- Reset both new pieces in the same `loop.py:249` block on page mutation.
+
 ### A: strengthen the synthetic
 Replace the current `"(pattern X already searched at step N, no new matches.)"` with:
 ```
@@ -84,11 +105,11 @@ Try a different pattern from the most recent read, or call done().
 ### C: hide `read_grep` after K identical-pattern hits
 - Add `_read_grep_dedup_streak: int` to `ReactLoop.__init__`.
 - On every `read_grep` dispatch:
-  - If the obs is the dedup synthetic AND the new `pattern` equals the prior `read_grep` call's `pattern`, increment the streak.
+  - If the obs is the dedup synthetic, increment the streak.
   - Otherwise reset the streak to 0.
-  - Reset triggers: different pattern; any non-`read_grep` tool call; page mutation (snapshot version bump).
-  - **`context` differences do not reset.** Match count and positions are independent of `context`; varying it does not change the result.
-- When `_read_grep_dedup_streak >= 2` (i.e. 3rd consecutive identical-pattern call), do both:
+  - Reset triggers: any non-`read_grep` tool call; page mutation (cleared in the same `loop.py:249` block).
+  - **`context` differences do not reset.** Match count and positions are independent of `context`; varying it cannot change the result, so a context-only change still counts as a same-pattern retry.
+- When `_read_grep_dedup_streak >= 2` (i.e. 3rd consecutive dedup-synthetic call), do both:
   1. Add `read_grep` to `_hidden_tools` (mirrors `read`/`list_interactive` exhaustion at `loop.py:425/457`).
   2. Return obs:
      ```
@@ -151,6 +172,8 @@ The `done` trace event payload gains an `evidence` field (additive). Existing be
 - `test_read_grep_dedup_streak_resets_on_page_mutation`
 - `test_read_grep_synthetic_wording_strengthened`
 - `test_read_grep_dedup_streak_does_not_reset_on_context_change`
+- `test_read_grep_not_found_pattern_is_dedup_recorded` — fix for the current gap where NOT-FOUND patterns aren't tracked
+- `test_read_grep_dedup_synthetic_fires_for_repeated_not_found_pattern`
 
 ### `tests/unit/test_browser_read_grep.py` (new)
 - `test_read_grep_returns_match_count_and_positions_for_multiple_matches`
