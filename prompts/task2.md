@@ -25,3 +25,6 @@ Give me a full picture of how does the loop actions (including special behaviors
 
 /superpowers:brainstorming for 104, why didn't the agent try search the title + author? For 107, did the agent find last month downloads? Does any benchmarks used "reason" tool, and what are their "note" responeses?
 For 1., are we bench maxxing? The goto might not be always better. For 2., good idea with refine the query part. But will the agent try to refine the query for 50 steps? 3. Does list interactive also shows URL if it is a ref link? Agree on 3. What other values/options that we could expose? For 2., a limit is great. But how to avoid larger loop where it do random action and keep requesting?
+
+Can we stop detect stuck with code? It's almost never possible to handle all the cases. use the periodic forced reason is a good idea.
+How about this: for every tools available, add a "reason" field. Then for the history we only feed URL + action + reason, and don't limit it to 8.
