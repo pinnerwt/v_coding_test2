@@ -54,7 +54,7 @@ uv run python scripts/cost_report.py --all
 [![uv](https://img.shields.io/badge/uv-0.9.3-261230?logo=python&logoColor=white)](https://github.com/astral-sh/uv)
 [![Ruff](https://img.shields.io/badge/ruff-0.14.14-D7FF64?logo=ruff&logoColor=000)](https://github.com/astral-sh/ruff)
 [![task2 CI](https://github.com/pinnerwt/v_coding_test2/actions/workflows/task2-ci.yml/badge.svg?branch=main)](https://github.com/pinnerwt/v_coding_test2/actions/workflows/task2-ci.yml)
-[![Dependabot](https://img.shields.io/badge/dependabot-not%20configured-lightgrey)]()
+[![Dependabot](https://img.shields.io/badge/Dependabot-enabled-025E8C?logo=dependabot&logoColor=white)](.github/dependabot.yml)
 [![Coverage (task2)](https://img.shields.io/badge/coverage-92%25%20line-brightgreen)](artifacts/coverage.xml)
 
 This repo is a second-pass attempt at the three tasks defined in [`AI-Coding-Test-EN.md`](AI-Coding-Test-EN.md) (Chinese: [`AI-Coding-Test-ZH.md`](AI-Coding-Test-ZH.md)). It deliberately drops the openspec/CI scaffolding from the [first trial](https://github.com/pinnerwt/v_coding_test) and focuses on success rate / latency / token usage of the task 2 agent. The whole repo is **test-driven**; see [`CLAUDE.md`](CLAUDE.md) for operating rules.
@@ -111,7 +111,14 @@ See [`task2/README.md`](task2/README.md) for env vars, Docker, Zeabur, and archi
 
 ## Dependabot
 
-Not configured. The first trial had weekly `uv` + `github-actions` updates under `.github/dependabot.yml`; reintroduce when CI lands.
+Configured in [`.github/dependabot.yml`](.github/dependabot.yml):
+
+| Ecosystem        | Directory   | Cadence | Commit prefix    | Labels                     |
+|------------------|-------------|---------|------------------|----------------------------|
+| `uv`             | `/task2`    | weekly  | `chore(task2)`   | `dependencies`, `task2`    |
+| `github-actions` | `/`         | weekly  | `chore(ci)`      | `dependencies`, `ci`       |
+
+Open PRs are capped at 5 per ecosystem and run through the same CI gate as human PRs.
 
 ## Test coverage
 
