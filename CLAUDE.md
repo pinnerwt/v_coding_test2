@@ -50,7 +50,7 @@ What this rules out: writing implementation first and retro-fitting tests; skipp
 
 ## Known Constraints
 
-- **Task 2 LLM**: a local Qwen3.5 27B at `http://localhost:8090` with an OpenAI-compatible endpoint. Code must not hardcode a hosted provider; route through a configurable base URL so the deployed Zeabur instance can point elsewhere.
+- **Task 2 LLM**: currently DeepSeek (`https://api.deepseek.com`, model `deepseek-chat`), reached via the OpenAI-compatible `/chat/completions` endpoint. Auth key from `DEEPSEEK_API_KEY`; base URL / model overridable via `AGENT_MODEL_BASE_URL` / `AGENT_MODEL_NAME`. The brief originally specified a local Qwen3.5 27B at `http://localhost:8090`; the codebase must keep that swap a one-env-var change (no hardcoded provider, no DeepSeek-specific request shape). DeepSeek returns standard `usage` (`prompt_tokens` / `completion_tokens` / `total_tokens`) on every completion — rely on it for cost/observability rather than re-counting tokens client-side. There is no separate "summarizer" client anymore; all LLM calls go through the single agent client.
 - **Task 3 SEC API**: `User-Agent` header required, 10 req/sec ceiling, no API key. Respect the rate limit in code, not just in prose.
 
 ## What Not To Do

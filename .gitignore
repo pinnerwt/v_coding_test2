@@ -1,0 +1,5 @@
+AI-Coding-Test-*.md
+.env
+.coverage
+coverage.xml
+!artifacts/coverage.xml

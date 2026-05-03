@@ -1,0 +1,212 @@
+import json
+
+import pytest
+
+from agent.llm import LLMClient
+
+
+class _FakeTransport:
+    def __init__(self):
+        self.last_request = None
+
+    async def handle_async_request(self, request):
+        import httpx
+
+        self.last_request = request
+        body = json.loads(request.content)
+        # Echo so test can assert on it
+        return httpx.Response(
+            200,
+            json={
+                "_echo": body,
+                "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_basic_chat_no_extra_body():
+    import httpx
+
+    transport = _FakeTransport()
+    client = LLMClient(
+        base_url="http://test/v1",
+        model="m",
+        transport=httpx.MockTransport(transport.handle_async_request),
+    )
+    msg, _ = await client.chat([{"role": "user", "content": "hi"}])
+    sent = transport.last_request
+    body = json.loads(sent.content)
+    assert body["model"] == "m"
+    # extra_body was vLLM-specific (Qwen thinking-mode) and is dropped
+    # so hosted providers (DeepSeek, OpenAI) don't reject it.
+    assert "extra_body" not in body
+    assert msg["content"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_api_key_sets_authorization_header():
+    import httpx
+
+    transport = _FakeTransport()
+    client = LLMClient(
+        base_url="http://test/v1",
+        model="m",
+        api_key="sk-test-abc",
+        transport=httpx.MockTransport(transport.handle_async_request),
+    )
+    await client.chat([{"role": "user", "content": "hi"}])
+    sent = transport.last_request
+    assert sent.headers.get("authorization") == "Bearer sk-test-abc"
+
+
+@pytest.mark.asyncio
+async def test_no_api_key_means_no_authorization_header():
+    import httpx
+
+    transport = _FakeTransport()
+    client = LLMClient(
+        base_url="http://test/v1",
+        model="m",
+        transport=httpx.MockTransport(transport.handle_async_request),
+    )
+    await client.chat([{"role": "user", "content": "hi"}])
+    sent = transport.last_request
+    assert "authorization" not in {k.lower() for k in sent.headers}
+
+
+@pytest.mark.asyncio
+async def test_http_error_surfaces_response_body():
+    import httpx
+
+    body_text = (
+        '{"error":{"message":"Messages with role tool must respond to tool_calls",'
+        '"code":"invalid_request_error"}}'
+    )
+
+    async def handler(request):
+        return httpx.Response(400, text=body_text)
+
+    client = LLMClient(
+        base_url="http://test/v1",
+        model="m",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        await client.chat([{"role": "user", "content": "hi"}])
+    assert "400" in str(exc_info.value)
+    assert "Messages with role tool" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_tools_passed_through():
+    import httpx
+
+    transport = _FakeTransport()
+    client = LLMClient(
+        base_url="http://test/v1",
+        model="m",
+        transport=httpx.MockTransport(transport.handle_async_request),
+    )
+    tools = [{"type": "function", "function": {"name": "x", "parameters": {}}}]
+    await client.chat([{"role": "user", "content": "hi"}], tools=tools, tool_choice="auto")
+    body = json.loads(transport.last_request.content)
+    assert body["tools"] == tools
+    assert body["tool_choice"] == "auto"
+
+
+@pytest.mark.asyncio
+async def test_chat_rejects_tool_call_name_not_in_tools():
+    """The DeepSeek API does not validate tool-call names against the
+    `tools` list server-side; it relays whatever the model emits. The
+    LLM client must validate names client-side and raise so the caller
+    can recover (e.g., synthesize a feedback obs and continue)."""
+    import httpx
+
+    from agent.llm import ToolNameNotAllowed
+
+    async def handler(request):
+        # Model hallucinates a call to "read" but only "done" is allowed.
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "c1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "read",
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = LLMClient(
+        base_url="http://test/v1",
+        model="m",
+        transport=httpx.MockTransport(handler),
+    )
+    tools = [{"type": "function", "function": {"name": "done", "parameters": {}}}]
+    with pytest.raises(ToolNameNotAllowed) as exc:
+        await client.chat(
+            [{"role": "user", "content": "hi"}],
+            tools=tools,
+            tool_choice="required",
+        )
+    assert exc.value.name == "read"
+    assert exc.value.allowed == {"done"}
+
+
+@pytest.mark.asyncio
+async def test_chat_passes_through_allowed_tool_call_name():
+    """A tool_call whose name IS in the tools list must flow through
+    unchanged."""
+    import httpx
+
+    async def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "c1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "done",
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = LLMClient(
+        base_url="http://test/v1",
+        model="m",
+        transport=httpx.MockTransport(handler),
+    )
+    tools = [{"type": "function", "function": {"name": "done", "parameters": {}}}]
+    msg, _ = await client.chat(
+        [{"role": "user", "content": "hi"}],
+        tools=tools,
+        tool_choice="required",
+    )
+    assert msg["tool_calls"][0]["function"]["name"] == "done"

@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /task2
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(task2)"
+      include: scope
+    labels:
+      - dependencies
+      - task2
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+      include: scope
+    labels:
+      - dependencies
+      - ci
