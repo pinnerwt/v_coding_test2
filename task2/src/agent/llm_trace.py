@@ -132,6 +132,7 @@ class LoggingLLMClient:
                             "tools": tools,
                             "tool_choice": tool_choice,
                             "temperature": temperature,
+                            "reasoning": reasoning,
                         },
                         "response": {
                             "message": msg,

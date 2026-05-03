@@ -76,6 +76,7 @@ async def test_proxy_forwards_chat_and_writes_one_sidecar_line(tmp_path: Path):
     assert rec["request"]["base_url"] == "http://test/v1"
     assert rec["request"]["messages"] == [{"role": "user", "content": "hi"}]
     assert rec["request"]["tool_choice"] == "required"
+    assert rec["request"]["reasoning"] is False
     assert rec["response"]["usage"]["prompt_cache_hit_tokens"] == 80
     assert rec["response"]["message"]["tool_calls"][0]["function"]["name"] == "done"
     assert isinstance(rec["latency_ms"], int) and rec["latency_ms"] >= 0
@@ -147,3 +148,47 @@ async def test_proxy_aclose_forwards_to_inner():
     proxy = LoggingLLMClient(inner=_FakeInner(), writer=None)  # writer optional in this path
     await proxy.aclose()
     assert closed["flag"] is True
+
+
+@pytest.mark.asyncio
+async def test_proxy_does_not_mutate_caller_messages(tmp_path: Path):
+    inner, _ = _make_inner({"choices": [{"message": {"role": "assistant", "content": "ok"}}]})
+    writer = LLMTraceWriter(tmp_path / "x.llm.jsonl")
+    proxy = LoggingLLMClient(inner=inner, writer=writer)
+
+    big = "z" * 20000
+    messages = [{"role": "tool", "content": big, "tool_call_id": "t1"}]
+    original_msg_id = id(messages[0])
+    original_content = messages[0]["content"]
+
+    await proxy.chat(messages)
+
+    assert messages[0]["content"] is original_content  # not replaced
+    assert id(messages[0]) == original_msg_id  # same dict
+    assert messages[0]["content"] == "z" * 20000  # not truncated in place
+
+
+@pytest.mark.asyncio
+async def test_proxy_propagates_inner_exception_without_writing_sidecar(tmp_path: Path):
+    class _BoomInner:
+        def __init__(self):
+            self._model = "deepseek-chat"
+            self._base_url = "http://test/v1"
+
+        async def chat(self, *a, **k):
+            raise RuntimeError("inner exploded")
+
+        async def aclose(self):
+            pass
+
+    sidecar = tmp_path / "x.llm.jsonl"
+    writer = LLMTraceWriter(sidecar)
+    proxy = LoggingLLMClient(inner=_BoomInner(), writer=writer)
+
+    with pytest.raises(RuntimeError, match="inner exploded"):
+        await proxy.chat([{"role": "user", "content": "hi"}])
+
+    # No sidecar line for failed inner calls
+    assert not sidecar.exists() or sidecar.read_text() == ""
+    # call_idx still advanced (so a future successful call gets idx 1)
+    assert proxy._call_idx == 1
