@@ -55,7 +55,7 @@ uv run python scripts/cost_report.py --all
 [![Ruff](https://img.shields.io/badge/ruff-0.14.14-D7FF64?logo=ruff&logoColor=000)](https://github.com/astral-sh/ruff)
 [![task2 CI](https://github.com/pinnerwt/v_coding_test2/actions/workflows/task2-ci.yml/badge.svg?branch=main)](https://github.com/pinnerwt/v_coding_test2/actions/workflows/task2-ci.yml)
 [![Dependabot](https://img.shields.io/badge/dependabot-not%20configured-lightgrey)]()
-[![Coverage (task2)](https://img.shields.io/badge/coverage-92%25%20line-brightgreen)](task2/coverage.xml)
+[![Coverage (task2)](https://img.shields.io/badge/coverage-92%25%20line-brightgreen)](https://github.com/pinnerwt/v_coding_test2/actions/workflows/task2-ci.yml)
 
 This repo is a second-pass attempt at the three tasks defined in [`AI-Coding-Test-EN.md`](AI-Coding-Test-EN.md) (Chinese: [`AI-Coding-Test-ZH.md`](AI-Coding-Test-ZH.md)). It deliberately drops the openspec/CI scaffolding from the [first trial](https://github.com/pinnerwt/v_coding_test) and focuses on success rate / latency / token usage of the task 2 agent. The whole repo is **test-driven**; see [`CLAUDE.md`](CLAUDE.md) for operating rules.
 
@@ -115,7 +115,7 @@ Not configured. The first trial had weekly `uv` + `github-actions` updates under
 
 ## Test coverage
 
-Latest local run: **92% line coverage** across `task2/src/agent` (242 tests, see `task2/coverage.xml`). Regenerate with:
+Latest local run: **92% line coverage** across `task2/src/agent` (242 tests). Regenerate with:
 
 ```bash
 cd task2
