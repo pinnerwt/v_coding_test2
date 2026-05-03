@@ -52,9 +52,9 @@ def test_config_loads_anti_loop_defaults(monkeypatch):
     from agent.config import Config
 
     c = Config.from_env()
-    assert c.small_diff_threshold == 500
+    assert c.small_diff_threshold == 50
     assert c.max_auto_advance_hops == 32
-    assert c.diff_inject_max_lines == 10
+    assert c.diff_inject_max_lines == 50
 
 
 def test_config_overrides_anti_loop_via_env(monkeypatch):

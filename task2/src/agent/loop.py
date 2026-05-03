@@ -103,9 +103,9 @@ class ReactLoop:
         question_channel: QuestionChannel,
         max_steps: int = 50,
         send_transient=None,
-        small_diff_threshold: int = 500,
+        small_diff_threshold: int = 50,
         max_auto_advance_hops: int = 32,
-        diff_inject_max_lines: int = 10,
+        diff_inject_max_lines: int = 50,
         reason_log: list[str] | None = None,
     ):
         self.llm = llm
@@ -289,9 +289,7 @@ class ReactLoop:
                     f"tool {e.name!r} is not available right now (masked or "
                     f"unknown). Pick from: {sorted(e.allowed)!r}."
                 )
-                self.tape.append(
-                    {"thought": "", "action": e.name, "args": {}, "obs": obs}
-                )
+                self.tape.append({"thought": "", "action": e.name, "args": {}, "obs": obs})
                 self.trace.write(
                     {
                         "type": "step",
