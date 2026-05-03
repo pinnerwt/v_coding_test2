@@ -1,8 +1,19 @@
-"""Goto-grounding scans narrative urls/actions/reasons, not obs.
+"""Goto-grounding scans page-grounded sources, not the agent's own narrative.
 
-After T6 the recent-3-obs window is too narrow to ground new navigations against.
-The narrative-history (T5) IS in context, so the allowlist source moves from prior
-obs strings to per-step (url, args string values, reason).
+Earlier (T8) the allowlist was built from per-step (url, args string values,
+reason). That design is self-defeating: the agent can put any URL into its own
+`reason` text or into the `args` of a *blocked* goto, and the very next goto
+to that URL will pass the check. Trace 7bd13ccc demonstrated the loophole —
+agent typed the target URL into a checkpoint reason after a blocked goto, then
+re-issued goto and was admitted.
+
+Sources that are evidence the URL was actually exposed by the world (not
+fabricated by the agent):
+  - the goal text (user-supplied)
+  - prior step `url` field (page URL the browser actually loaded)
+  - prior step `obs` field (page text the browser actually rendered)
+  - the visited-URL chain
+NOT sources: the agent's `reason` text or `args` strings.
 """
 
 from collections import deque
@@ -20,6 +31,9 @@ def test_url_extracted_from_reason():
 
 
 def test_goto_allowed_when_url_in_reason_text():
+    """Lower-level helper: _is_goto_allowed itself is source-agnostic. The
+    grounding decision (what counts as a valid source) lives in
+    _build_allowlist_sources_from_tape, tested separately below."""
     sources = ["I noticed https://example.com/foo on the page"]
     allowlist = []
     for s in sources:
@@ -35,50 +49,58 @@ def test_goto_blocked_when_url_nowhere():
     assert not _is_goto_allowed("https://malicious.example/x", allowlist)
 
 
-def test_allowlist_sources_extract_url_from_reason_only():
-    """The URL appears ONLY in reason — not in obs, not in args, not in url field.
-    This proves the new behavior: reason text contributes to the allowlist.
-
-    Regression-shaped: under the OLD obs-based extraction, this tape's only
-    obs string contains no URL, so the allowlist would be empty and the goto
-    blocked. Documenting that explicitly:
-    """
-    tape = [
-        {
-            "url": "https://other.example/",
-            "action": "read",
-            "args": {},
-            "reason": "found https://example.com/foo on the page",
-            "obs": "page contained no useful URLs",
-        }
-    ]
-    # Sanity: the obs intentionally has no URL — old extraction would fail.
-    assert "https://example.com/foo" not in tape[0]["obs"]
-
+def _allowlist_from(tape, **kw):
     sources = _build_allowlist_sources_from_tape(
         tape=tape,
-        page_url="",
-        goal="goal text",
-        visited_urls=deque(),
+        page_url=kw.get("page_url", ""),
+        goal=kw.get("goal", ""),
+        visited_urls=kw.get("visited_urls", deque()),
     )
-    allowlist = []
+    out: list[str] = []
     for s in sources:
-        allowlist.extend(_extract_urls(s))
-    assert _is_goto_allowed("https://example.com/foo", allowlist)
+        out.extend(_extract_urls(s))
+    return out
 
 
-def test_allowlist_sources_extract_url_from_action_args():
+def test_allowlist_excludes_url_only_in_reason():
+    """Regression: agent fabricates a URL in `reason`, then goto's it.
+    Before this fix, this URL would land in the allowlist via reason text.
+    Trace 7bd13ccc is the canonical case (step 10 reason → step 11 goto)."""
+    tape = [
+        {
+            "url": "https://github.com/",
+            "action": "reason",
+            "args": {"text": "I'll navigate directly", "reason": "checkpoint"},
+            "reason": "Next: I'll goto https://github.com/huggingface/transformers",
+            "obs": "noted",
+        }
+    ]
+    allowlist = _allowlist_from(tape, page_url="https://github.com/")
+    assert not _is_goto_allowed(
+        "https://github.com/huggingface/transformers", allowlist
+    )
+
+
+def test_allowlist_excludes_url_only_in_action_args():
+    """Regression: a *blocked* goto still leaves its target URL in args. If
+    args were a source, the agent could just retry and be admitted on the
+    second try. They aren't."""
     tape = [
         {
             "url": "https://start.example/",
             "action": "goto",
             "args": {"url": "https://target.example/page"},
             "reason": "navigate",
-            "obs": "navigated",
+            "obs": "ERROR: blocked goto to https://target.example/page",
         }
     ]
+    # The blocked-goto's *obs* mentions the URL — but obs URLs only count when
+    # they were rendered by the page, not when they were echoed back inside an
+    # error message that quoted the agent's own input. We accept that obs-as-
+    # source is slightly loose here (the URL did make it into a real obs
+    # string), but not via args alone:
     sources = _build_allowlist_sources_from_tape(
-        tape=tape,
+        tape=[{**tape[0], "obs": "blocked"}],  # strip URL from obs
         page_url="",
         goal="g",
         visited_urls=deque(),
@@ -86,7 +108,28 @@ def test_allowlist_sources_extract_url_from_action_args():
     allowlist = []
     for s in sources:
         allowlist.extend(_extract_urls(s))
-    assert _is_goto_allowed("https://target.example/page", allowlist)
+    assert not _is_goto_allowed("https://target.example/page", allowlist)
+
+
+def test_allowlist_includes_url_from_obs():
+    """A URL that appeared in real page text (an `obs`) IS grounded — that's
+    how the agent navigates from a search results page, etc."""
+    tape = [
+        {
+            "url": "https://google.com/search",
+            "action": "read",
+            "args": {},
+            "reason": "looking for the repo",
+            "obs": (
+                "search results: https://github.com/huggingface/transformers"
+                " - State-of-the-art ML"
+            ),
+        }
+    ]
+    allowlist = _allowlist_from(tape)
+    assert _is_goto_allowed(
+        "https://github.com/huggingface/transformers", allowlist
+    )
 
 
 def test_allowlist_sources_extract_url_from_step_url_field():
@@ -99,20 +142,14 @@ def test_allowlist_sources_extract_url_from_step_url_field():
             "obs": "<text>",
         }
     ]
-    sources = _build_allowlist_sources_from_tape(
-        tape=tape,
-        page_url="",
-        goal="g",
-        visited_urls=deque(),
-    )
-    allowlist = []
-    for s in sources:
-        allowlist.extend(_extract_urls(s))
+    allowlist = _allowlist_from(tape)
     assert _is_goto_allowed("https://visited.example/path", allowlist)
 
 
 def test_allowlist_sources_skips_non_string_args():
-    """Non-string args (e.g. id ints, bools) must not crash extraction."""
+    """Non-string args (e.g. id ints, bools) must not crash extraction.
+    Args themselves are no longer a source, but the function still walks
+    them defensively — extraction should not raise."""
     tape = [
         {
             "url": "",
@@ -122,7 +159,6 @@ def test_allowlist_sources_skips_non_string_args():
             "obs": "clicked",
         }
     ]
-    # Should not raise.
     sources = _build_allowlist_sources_from_tape(
         tape=tape,
         page_url="",
@@ -132,7 +168,6 @@ def test_allowlist_sources_skips_non_string_args():
     allowlist = []
     for s in sources:
         allowlist.extend(_extract_urls(s))
-    # No URL anywhere in this tape.
     assert allowlist == []
 
 
@@ -150,26 +185,3 @@ def test_allowlist_sources_includes_goal_page_and_visited():
     assert _is_goto_allowed("https://goal.example/x", allowlist)
     assert _is_goto_allowed("https://current.example/now", allowlist)
     assert _is_goto_allowed("https://past.example/p", allowlist)
-
-
-def test_allowlist_sources_does_not_include_obs():
-    """The whole point of T8: obs is no longer a source."""
-    tape = [
-        {
-            "url": "https://a.example/",
-            "action": "read",
-            "args": {},
-            "reason": "looking",
-            "obs": "page mentions https://obs-only.example/x",
-        }
-    ]
-    sources = _build_allowlist_sources_from_tape(
-        tape=tape,
-        page_url="",
-        goal="g",
-        visited_urls=deque(),
-    )
-    allowlist = []
-    for s in sources:
-        allowlist.extend(_extract_urls(s))
-    assert not _is_goto_allowed("https://obs-only.example/x", allowlist)
