@@ -42,26 +42,22 @@ def _build_allowlist_sources_from_tape(
     goal: str,
     visited_urls: Iterable[str],
 ) -> list[str]:
-    """Build the goto-grounding allowlist sources from narrative history.
+    """Build the goto-grounding allowlist sources from page-grounded history.
 
-    Per-step contributions are: the step's `url`, every string-typed value in
-    `args`, and the `reason` text. Obs strings are intentionally NOT included
-    (they are no longer in the agent's context window beyond the recent-3
-    raw obs, so grounding against them would be too narrow).
+    Per-step contributions are: the step's `url` (page URL the browser
+    actually loaded) and `obs` (page text the browser actually rendered).
+    The agent's own `args` and `reason` text are deliberately excluded —
+    otherwise the agent can self-grant access to any URL just by quoting it
+    in its own reasoning or in a blocked goto's args (trace 7bd13ccc).
     """
     sources: list[str] = [goal or ""]
     for step in tape:
         url = step.get("url", "")
         if url:
             sources.append(url)
-        args = step.get("args") or {}
-        if isinstance(args, dict):
-            for v in args.values():
-                if isinstance(v, str):
-                    sources.append(v)
-        reason = step.get("reason", "")
-        if reason:
-            sources.append(reason)
+        obs = step.get("obs", "")
+        if isinstance(obs, str) and obs:
+            sources.append(obs)
     sources.append(page_url or "")
     sources.extend(visited_urls)
     return sources
