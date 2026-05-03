@@ -1,11 +1,53 @@
 from __future__ import annotations
 
+import ipaddress
 from typing import Any
+from urllib.parse import urlsplit
 
 from agent.browser_session import BrowserSession
 from agent.tools.registry import Tool
 
 _READ_LIMIT = 1600
+
+_ALLOWED_SCHEMES = {"http", "https", "data"}
+_BLOCKED_HOSTNAMES = {"localhost", "ip6-localhost", "ip6-loopback"}
+
+
+def is_safe_goto_url(url: str) -> tuple[bool, str]:
+    """Return (ok, reason). ok=True means the URL is safe to hand to Playwright.
+
+    Rules: http(s) and data: only (data: is opaque-origin in Chromium and
+    cannot reach internal services). The host on http(s) must not be a
+    loopback / private / link-local address (which covers cloud-metadata
+    IPs at 169.254.169.254 and 169.254.170.2).
+    """
+    if not url or not url.strip():
+        return False, "empty URL"
+    parts = urlsplit(url.strip())
+    scheme = parts.scheme.lower()
+    if scheme not in _ALLOWED_SCHEMES:
+        return False, f"scheme {scheme!r} not allowed (http/https/data only)"
+    if scheme == "data":
+        return True, ""
+    host = (parts.hostname or "").lower()
+    if not host:
+        return False, "URL has no host"
+    if host in _BLOCKED_HOSTNAMES:
+        return False, f"host {host!r} is blocked (loopback)"
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return True, ""
+    if (
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local
+        or ip.is_unspecified
+        or ip.is_reserved
+        or ip.is_multicast
+    ):
+        return False, f"host {host} is in a blocked range (loopback/private/link-local)"
+    return True, ""
 
 
 def build_browser_tools(session: BrowserSession) -> dict[str, Any]:
@@ -15,6 +57,9 @@ def build_browser_tools(session: BrowserSession) -> dict[str, Any]:
     """
 
     async def goto(url: str) -> str:
+        ok, reason = is_safe_goto_url(url)
+        if not ok:
+            return f"ERROR: blocked URL {url!r} — {reason}"
         try:
             await session.page.goto(url, wait_until="domcontentloaded", timeout=20_000)
             return f"navigated to {session.page.url}"
