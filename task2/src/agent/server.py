@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -69,6 +69,16 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
     app.state.session_semaphore = sem
     app.state.sessions_in_flight = 0
     notes = NotesStore(data_dir / "url_notes.db", query_strip=cfg.url_note_query_strip)
+
+    expected_token = cfg.agent_auth_token
+
+    def require_token(authorization: str | None = Header(default=None)) -> None:
+        if expected_token is None:
+            return
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="missing bearer token")
+        if authorization.removeprefix("Bearer ").strip() != expected_token:
+            raise HTTPException(status_code=401, detail="invalid bearer token")
 
     async def run_loop(goal: str, send_event, ask_user) -> dict:
         session_id = uuid.uuid4().hex
@@ -175,7 +185,11 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
     async def index(request: Request):
         return templates.TemplateResponse(request, "index.html")
 
-    @app.get("/api/sessions")
+    @app.get("/api/auth_required")
+    async def auth_required():
+        return {"required": expected_token is not None}
+
+    @app.get("/api/sessions", dependencies=[Depends(require_token)])
     async def list_sessions():
         traces_dir = data_dir / "traces"
         if not traces_dir.exists():
@@ -202,7 +216,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
         out.sort(key=lambda s: s["started_at"] or "", reverse=True)
         return out
 
-    @app.get("/api/llm_health")
+    @app.get("/api/llm_health", dependencies=[Depends(require_token)])
     async def llm_health():
         url = cfg.agent_model_base_url.rstrip("/") + "/models"
         t0 = time.perf_counter()
@@ -214,7 +228,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
         except Exception:
             return {"llm": "down", "latency_ms": int((time.perf_counter() - t0) * 1000)}
 
-    @app.get("/api/trace/{sid}")
+    @app.get("/api/trace/{sid}", dependencies=[Depends(require_token)])
     async def get_trace(sid: str):
         if not _SID_RE.match(sid):
             raise HTTPException(status_code=404, detail="not found")
@@ -223,7 +237,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
             raise HTTPException(status_code=404, detail="not found")
         return read_trace(p)
 
-    @app.post("/api/run_sync")
+    @app.post("/api/run_sync", dependencies=[Depends(require_token)])
     async def run_sync(payload: dict):
         async def send_event(ev):
             return None
@@ -235,6 +249,15 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
 
     @app.websocket("/ws")
     async def ws(ws: WebSocket):
+        if expected_token is not None:
+            supplied = ws.query_params.get("token")
+            if supplied is None:
+                hdr = ws.headers.get("authorization") or ""
+                if hdr.startswith("Bearer "):
+                    supplied = hdr.removeprefix("Bearer ").strip()
+            if supplied != expected_token:
+                await ws.close(code=1008)
+                return
         await ws.accept()
         try:
             first = await ws.receive_json()
