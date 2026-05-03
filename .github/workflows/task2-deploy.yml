@@ -100,7 +100,7 @@ jobs:
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           IMAGE: ${{ needs.build-and-smoke.outputs.image-tag }}
-          HOST_PORT: ${{ vars.DEPLOY_HOST_PORT || '8001' }}
+          DEPLOY_NETWORK: ${{ vars.DEPLOY_NETWORK || 'deploy_default' }}
           DATA_DIR: ${{ vars.DEPLOY_DATA_DIR || '/opt/task2/data' }}
         run: |
           # NOTE: env vars are passed inline to the remote shell. They are visible
@@ -109,7 +109,7 @@ jobs:
           ssh ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }} \
             IMAGE="$IMAGE" \
             DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
-            HOST_PORT="$HOST_PORT" \
+            DEPLOY_NETWORK="$DEPLOY_NETWORK" \
             DATA_DIR="$DATA_DIR" \
             bash -se <<'REMOTE'
           set -euo pipefail
@@ -120,7 +120,8 @@ jobs:
           docker run -d \
             --name task2-agent \
             --restart unless-stopped \
-            -p "${HOST_PORT}:8000" \
+            --network "$DEPLOY_NETWORK" \
+            --network-alias task2-agent \
             -e DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
             -e AGENT_RESTRICT_GOTO=true \
             -v "${DATA_DIR}:/app/data" \
