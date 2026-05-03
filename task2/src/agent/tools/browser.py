@@ -135,7 +135,7 @@ def build_browser_tools(
         except Exception as e:
             return f"ERROR: {e}"
 
-    async def click(id: int) -> str:
+    async def click(id: int, value: str | None = None) -> str:
         try:
             loc = session.locator(id)
             if await loc.count() == 0:
@@ -147,12 +147,21 @@ def build_browser_tools(
                 tag = await loc.evaluate("el => el.tagName", timeout=3000)
             except Exception:
                 tag = ""
-            if tag == "SELECT":
+            is_select = tag == "SELECT"
+            if is_select and value is None:
                 return (
-                    f"ERROR: id={id} is a <select>; clicking it does not open a "
-                    f"DOM-visible dropdown. Use select_option(id={id}, value=<one of "
-                    "the entries from list_interactive's `options` field>) instead."
+                    f"ERROR: id={id} is a <select>; pass value=<one of the "
+                    "`options` entries from list_interactive>."
                 )
+            if not is_select and value is not None:
+                return (
+                    f"ERROR: id={id} is not a <select>; `value` is only for "
+                    "<select>. Call list_interactive to refresh — eids are "
+                    "reassigned each snapshot."
+                )
+            if is_select:
+                await loc.select_option(value, timeout=5_000)
+                return f"selected {value!r} on id={id}"
             try:
                 await loc.click(timeout=3000)
             except Exception:
@@ -176,19 +185,6 @@ def build_browser_tools(
         except Exception as e:
             return f"ERROR: {e}"
 
-    async def select_option(id: int, value: str) -> str:
-        try:
-            loc = session.locator(id)
-            if await loc.count() == 0:
-                return (
-                    f"ERROR: id={id} no longer in DOM. Call list_interactive "
-                    "to refresh — eids are reassigned each snapshot."
-                )
-            await loc.select_option(value, timeout=5_000)
-            return f"selected {value!r} on id={id}"
-        except Exception as e:
-            return f"ERROR: {e}"
-
     async def press_key(key: str) -> str:
         try:
             await session.page.keyboard.press(key)
@@ -204,7 +200,6 @@ def build_browser_tools(
         "list_interactive": list_interactive,
         "click": click,
         "type": type_,
-        "select_option": select_option,
         "press_key": press_key,
     }
 
@@ -285,11 +280,12 @@ def build_browser_tool_list(
         ),
         Tool(
             "click",
-            "Click element by ID from list_interactive.",
+            "Click an element by ID; for <select> elements, pass `value` to choose an option.",
             {
                 "type": "object",
                 "properties": {
                     "id": {"type": "integer"},
+                    "value": {"type": "string"},
                     "reason": {"type": "string"},
                 },
                 "required": ["id", "reason"],
@@ -310,20 +306,6 @@ def build_browser_tool_list(
                 "required": ["id", "text", "reason"],
             },
             fns["type"],
-        ),
-        Tool(
-            "select_option",
-            "Choose a value on a <select> element by ID.",
-            {
-                "type": "object",
-                "properties": {
-                    "id": {"type": "integer"},
-                    "value": {"type": "string"},
-                    "reason": {"type": "string"},
-                },
-                "required": ["id", "value", "reason"],
-            },
-            fns["select_option"],
         ),
         Tool(
             "press_key",

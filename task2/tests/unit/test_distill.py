@@ -56,7 +56,13 @@ async def test_distill_replaces_url_row_after_success(tmp_path):
         goal="best LLM for an RTX 3090",
         status="success",
         answer="Llama 3.1 8B",
-        tape=[{"action": "select_option", "args": {"id": 94}, "obs": "selected"}],
+        tape=[
+            {
+                "action": "click",
+                "args": {"id": 94, "value": "RTX 3090"},
+                "obs": "selected 'RTX 3090' on id=94",
+            }
+        ],
         reason_log=["GPU dropdown id=94"],
         trace=trace,
     )

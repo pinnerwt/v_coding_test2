@@ -1,4 +1,4 @@
-"""click()/type()/select_option() must fail in well under 1 second when
+"""click(id, value=...)/type() must fail in well under 1 second when
 the eid no longer maps to a live DOM element.
 
 Before this change, click() invoked Locator.evaluate(...) without timeout=,
@@ -44,9 +44,11 @@ class _DeadLocator:
 
 
 class _LiveLocator:
-    """A Locator whose count() returns 1 and whose actions succeed instantly."""
+    """Locator whose count() returns 1 and whose actions succeed.
+    `tag` is what `el => el.tagName` will return."""
 
-    def __init__(self):
+    def __init__(self, tag: str = "DIV"):
+        self.tag = tag
         self.click_calls = 0
         self.fill_calls = 0
         self.select_calls = 0
@@ -56,7 +58,7 @@ class _LiveLocator:
 
     async def evaluate(self, expr, *_a, **_k):
         if "tagName" in expr:
-            return "DIV"
+            return self.tag
         return None
 
     async def click(self, **_k):
@@ -68,8 +70,9 @@ class _LiveLocator:
     async def press(self, *_a, **_k):
         pass
 
-    async def select_option(self, *_a, **_k):
+    async def select_option(self, value, *_a, **_k):
         self.select_calls += 1
+        self.last_value = value
 
 
 class _Sess:
@@ -128,21 +131,85 @@ async def test_type_proceeds_when_count_positive():
 
 
 @pytest.mark.asyncio
-async def test_select_option_fast_fails_when_count_zero():
+async def test_click_with_value_fast_fails_when_count_zero():
+    """The count() == 0 fast-fail must run before the tag probe, so a stale
+    eid surfaces the standard "no longer in DOM" error in well under 1s
+    even when the LLM passed a value."""
     sess = _Sess({3: _DeadLocator()})
     tools = build_browser_tools(sess, restrict_goto=False)
     t0 = time.monotonic()
-    obs = await tools["select_option"](id=3, value="x")
+    obs = await tools["click"](id=3, value="x")
     elapsed = time.monotonic() - t0
     assert "no longer in DOM" in obs
-    assert elapsed < 1.0
+    assert "list_interactive" in obs
+    assert elapsed < 1.0, f"click took {elapsed:.2f}s — must fast-fail"
 
 
 @pytest.mark.asyncio
-async def test_select_option_proceeds_when_count_positive():
-    loc = _LiveLocator()
+async def test_click_on_select_with_value_dispatches_to_select_option():
+    loc = _LiveLocator(tag="SELECT")
     sess = _Sess({3: loc})
     tools = build_browser_tools(sess, restrict_goto=False)
-    obs = await tools["select_option"](id=3, value="x")
-    assert "selected 'x' on id=3" in obs
+    obs = await tools["click"](id=3, value="Title")
+    assert obs == "selected 'Title' on id=3"
     assert loc.select_calls == 1
+    assert loc.last_value == "Title"
+    assert loc.click_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_click_on_select_without_value_returns_actionable_error():
+    """LLM must be told to pass `value` from the live section's `options`."""
+    loc = _LiveLocator(tag="SELECT")
+    sess = _Sess({3: loc})
+    tools = build_browser_tools(sess, restrict_goto=False)
+    obs = await tools["click"](id=3)
+    assert obs.startswith("ERROR:")
+    assert "id=3" in obs
+    assert "<select>" in obs
+    assert "value" in obs
+    assert "options" in obs
+    # The new unified click does not mention select_option (LLM no longer has it).
+    # This negative assertion is what flips this test from green→red against today's code.
+    assert "select_option" not in obs
+    assert loc.select_calls == 0
+    assert loc.click_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_click_on_non_select_with_value_flags_stale_eid():
+    """Case-104 prevention: LLM still 'remembers' eid as a <select> after
+    a snapshot rotation re-bound it to <a>. Tool must surface a stale-eid
+    ERROR with `Call list_interactive`, not silently click."""
+    loc = _LiveLocator(tag="A")
+    sess = _Sess({3: loc})
+    tools = build_browser_tools(sess, restrict_goto=False)
+    obs = await tools["click"](id=3, value="Title")
+    assert obs.startswith("ERROR:")
+    assert "id=3" in obs
+    assert "not a <select>" in obs
+    assert "list_interactive" in obs
+    assert loc.click_calls == 0
+    assert loc.select_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_select_option_not_in_tool_registry():
+    """LLM tool surface should expose only `click`; no `select_option`."""
+    from agent.tools.browser import build_browser_tool_list, build_browser_tools
+
+    sess = _Sess({})
+    fns = build_browser_tools(sess, restrict_goto=False)
+    assert "select_option" not in fns
+
+    tool_list = build_browser_tool_list(sess, restrict_goto=False)
+    names = [t.name for t in tool_list]
+    assert "select_option" not in names
+    assert "click" in names
+
+    click_tool = next(t for t in tool_list if t.name == "click")
+    props = click_tool.parameters["properties"]
+    assert "value" in props
+    assert props["value"]["type"] == "string"
+    # value must NOT be required — it's only used for <select>
+    assert "value" not in click_tool.parameters.get("required", [])

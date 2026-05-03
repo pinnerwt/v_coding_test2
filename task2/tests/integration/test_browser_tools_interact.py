@@ -57,7 +57,7 @@ async def test_click_type_select_press(tmp_path):
         assert await s.page.input_value("#i") == "hello"
 
         s_id = by_role[("combobox", "")]
-        await tools["select_option"](id=s_id, value="b")
+        await tools["click"](id=s_id, value="b")
         assert await s.page.eval_on_selector("#s", "el => el.value") == "b"
 
         await tools["press_key"](key="Escape")
@@ -85,10 +85,10 @@ async def test_list_interactive_emits_options_for_select():
 
 
 @pytest.mark.asyncio
-async def test_click_on_select_short_circuits():
-    """Clicking a real <select> never produces a DOM-visible dropdown in
-    Playwright. Short-circuit with an instructive error so the model
-    switches to select_option immediately instead of looping."""
+async def test_click_on_select_without_value_short_circuits():
+    """Click on a real <select> with no value must produce an actionable
+    error telling the LLM to pass `value` instead of looping. Mirrors the
+    previous select_option-redirect behavior under the unified tool."""
     s = BrowserSession()
     await s.start()
     try:
@@ -100,8 +100,13 @@ async def test_click_on_select_short_circuits():
         sid = next(e["id"] for e in snap if e["role"] == "combobox")
         out = await tools["click"](id=sid)
         assert out.startswith("ERROR:")
-        assert "select_option" in out
+        assert "<select>" in out
+        assert "value" in out
+        assert "options" in out
         assert f"id={sid}" in out
+        # Mirror the unit-test guard: the new unified-click error must not
+        # mention `select_option`, since the LLM no longer has that tool.
+        assert "select_option" not in out
     finally:
         await s.close()
 
@@ -187,7 +192,7 @@ async def test_each_id_resolves_to_distinct_dom_node():
         assert len(combos) == 5, f"expected 5 combos, got {len(combos)}"
         # Set the i-th select's value to opt-i-B via list_interactive id.
         for i, c in enumerate(combos):
-            out = await tools["select_option"](id=c["id"], value=f"opt-{i}-B")
+            out = await tools["click"](id=c["id"], value=f"opt-{i}-B")
             assert out.startswith("selected"), f"combo {i}: {out}"
         # Each select must have its own option B set, not duplicates.
         values = await s.page.evaluate(
@@ -199,7 +204,7 @@ async def test_each_id_resolves_to_distinct_dom_node():
 
 
 @pytest.mark.asyncio
-async def test_select_option_failure_fast():
+async def test_click_on_select_with_bad_value_fails_fast():
     """Default Playwright timeout is 30s — three failures = 90s of dead
     time in a 50-step budget. Cap to ~5s so the loop recovers fast."""
     s = BrowserSession()
@@ -212,10 +217,10 @@ async def test_select_option_failure_fast():
         snap = await s.snapshot()
         sid = next(e["id"] for e in snap if e["role"] == "combobox")
         t0 = time.monotonic()
-        out = await tools["select_option"](id=sid, value="NotAnOption")
+        out = await tools["click"](id=sid, value="NotAnOption")
         elapsed = time.monotonic() - t0
         assert out.startswith("ERROR:")
-        assert elapsed < 10.0, f"select_option took {elapsed:.1f}s; expected <10s"
+        assert elapsed < 10.0, f"click took {elapsed:.1f}s; expected <10s"
     finally:
         await s.close()
 
@@ -354,5 +359,35 @@ async def test_snapshot_listbox_options_appear_when_expanded():
         assert "google-bert/bert-base-uncased" in names, options
         assert "nlpaueb/legal-bert-base-uncased" in names, options
         assert "should-not-appear" not in names, options
+    finally:
+        await s.close()
+
+
+HTML_SELECT_AND_LINK = """<!doctype html><html><body>
+<select id=field><option>Title</option><option>Author</option></select>
+<a id=ln href="/next">Next</a>
+</body></html>"""
+
+
+@pytest.mark.asyncio
+async def test_click_with_value_on_link_flags_stale_eid():
+    """Case-104 prevention: if the LLM thinks an eid is a <select> but it
+    has been re-bound to <a> across snapshots, pass `value` and the tool
+    must surface a stale-eid ERROR rather than silently clicking the link."""
+    s = BrowserSession()
+    await s.start()
+    try:
+        url = "data:text/html;base64," + base64.b64encode(HTML_SELECT_AND_LINK.encode()).decode()
+        tools = build_browser_tools(s, restrict_goto=False)
+        await tools["goto"](url=url)
+        await tools["list_interactive"]()
+        snap = await s.snapshot()
+        link_id = next(e["id"] for e in snap if e["role"] == "link")
+        out = await tools["click"](id=link_id, value="Title")
+        assert out.startswith("ERROR:")
+        assert "not a <select>" in out
+        assert "list_interactive" in out
+        # Page must NOT have navigated.
+        assert s.page.url == url, s.page.url
     finally:
         await s.close()
