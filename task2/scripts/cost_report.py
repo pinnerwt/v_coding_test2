@@ -32,6 +32,8 @@ def price_usage(usage: dict[str, Any], prices: dict[str, float]) -> float:
     completion = int(usage.get("completion_tokens", 0) or 0)
     hit = usage.get("prompt_cache_hit_tokens")
     miss = usage.get("prompt_cache_miss_tokens")
+    # Contract: provider returns both fields or neither. If only one
+    # is present we trust it as-is and bill the other as 0.
     if hit is None and miss is None:
         hit_n, miss_n = 0, prompt
     else:
@@ -60,7 +62,7 @@ def _prices_for(model: str | None, base_url: str | None, table: dict) -> dict[st
     defaults if the lookup misses."""
     provider = "deepseek"
     if base_url:
-        host = base_url.split("//", 1)[-1].split("/", 1)[0]
+        host = base_url.split("//", 1)[-1].split("/", 1)[0].split(":", 1)[0]
         if host:
             provider = host.split(".")[0]
     key = f"{provider}/{model}" if model else None

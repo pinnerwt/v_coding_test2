@@ -1,8 +1,7 @@
 from pathlib import Path
 
 import pytest
-
-from scripts.cost_report import (
+from cost_report import (
     DEFAULT_PRICES,
     analyze_sidecar,
     price_usage,
@@ -28,6 +27,15 @@ def test_price_usage_falls_back_to_prompt_tokens_when_no_cache_split():
     usage = {"prompt_tokens": 1000, "completion_tokens": 100}
     prices = {"input_miss": 0.27, "input_hit": 0.07, "output": 1.10}
     expected = (1000 * 0.27 + 100 * 1.10) / 1_000_000
+    assert price_usage(usage, prices) == pytest.approx(expected)
+
+
+def test_price_usage_trusts_partial_cache_split_as_is():
+    """If only one of hit/miss is present, the other is treated as 0
+    (matching DeepSeek's both-or-neither contract)."""
+    usage = {"prompt_tokens": 1000, "completion_tokens": 100, "prompt_cache_miss_tokens": 200}
+    prices = {"input_miss": 0.27, "input_hit": 0.07, "output": 1.10}
+    expected = (200 * 0.27 + 0 * 0.07 + 100 * 1.10) / 1_000_000
     assert price_usage(usage, prices) == pytest.approx(expected)
 
 
