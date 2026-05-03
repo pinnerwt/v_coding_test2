@@ -63,7 +63,7 @@ def test_system_prompt_does_not_bench_max() -> None:
     found = [s for s in banned if s in flat]
     assert not found, (
         f"prompt contains bench-specific strings: {found}. Replace with "
-        f"generic placeholder examples (e.g. `License: X` → `answer=\"X\"`)."
+        f'generic placeholder examples (e.g. `License: X` → `answer="X"`).'
     )
 
 

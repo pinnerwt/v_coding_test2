@@ -39,6 +39,7 @@ def test_blocks_non_http_schemes(url: str) -> None:
     assert ok is False
     assert reason  # human-readable reason
 
+
 @pytest.mark.parametrize(
     "url",
     [
