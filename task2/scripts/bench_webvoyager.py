@@ -70,6 +70,8 @@ async def run_one(client: httpx.AsyncClient, case: dict, timeout_s: float, data_
             "status": body.get("status"),
             "answer": (body.get("answer") or "")[:200],
             "steps": body.get("steps"),
+            "sid": body.get("sid"),
+            "queued_for_ms": body.get("queued_for_ms"),
             "elapsed_ms": elapsed_ms,
             "blocks": blocks,
         }
@@ -94,6 +96,16 @@ async def main():
         help="per-case seconds; local Qwen takes ~3-4 min per Wikipedia-grade case",
     )
     p.add_argument("--ids", help="comma-separated ids to run instead of --limit")
+    p.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help=(
+            "how many cases to run in parallel against the server. "
+            "The server caps at 5 (asyncio.Semaphore on run_loop); "
+            "higher values just queue."
+        ),
+    )
     args = p.parse_args()
 
     cases = json.loads(DATA.read_text())
@@ -107,20 +119,31 @@ async def main():
     started = datetime.now(UTC).isoformat()
     print(f"[bench] {len(cases)} cases, base={args.base_url}, timeout={args.timeout}s/case")
 
-    results = []
+    sem = asyncio.Semaphore(max(1, args.concurrency))
+    results: list[dict] = []
+    print(f"[bench] concurrency={args.concurrency}", flush=True)
+
     async with httpx.AsyncClient(base_url=args.base_url) as c:
-        for case in cases:
-            print(f"[bench] {case['id']} {case['web_name']} …", flush=True)
-            r = await run_one(c, case, args.timeout, ROOT / "data")
-            results.append(r)
-            steps = r.get("steps")
-            steps_str = f"{steps:>3}" if isinstance(steps, int) else "  ?"
-            blocks = r.get("blocks", 0)
-            print(
-                f"  -> {r['status']:>12}  steps={steps_str}  blocks={blocks}  "
-                f"{r['elapsed_ms']:>6}ms  {(r.get('answer') or '')[:80]}",
-                flush=True,
-            )
+
+        async def _bounded(case: dict) -> dict:
+            async with sem:
+                print(f"[bench] start {case['id']} {case['web_name']}", flush=True)
+                r = await run_one(c, case, args.timeout, ROOT / "data")
+                steps = r.get("steps")
+                steps_str = f"{steps:>3}" if isinstance(steps, int) else "  ?"
+                blocks = r.get("blocks", 0)
+                print(
+                    f"[bench] done  {case['id']} {case['web_name']}: "
+                    f"{r['status']:>12}  steps={steps_str}  blocks={blocks}  "
+                    f"{r['elapsed_ms']:>6}ms  {(r.get('answer') or '')[:80]}",
+                    flush=True,
+                )
+                return r
+
+        # Preserve original case order in `results` so case→trace mapping
+        # via list index lines up with the input order.
+        gathered = await asyncio.gather(*[_bounded(case) for case in cases])
+        results.extend(gathered)
 
     n = len(results)
     succ = sum(1 for r in results if r["status"] == "success")
