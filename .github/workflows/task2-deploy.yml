@@ -1,0 +1,133 @@
+name: task2 deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'task2/**'
+      - '.github/workflows/task2-deploy.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: task2-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: task2
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Image tag
+        id: meta
+        run: echo "tag=task2-agent:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        run: docker build -t ${{ steps.meta.outputs.tag }} .
+
+      - name: Start container
+        run: |
+          docker run -d --name task2-smoke -p 8000:8000 \
+            -e DATA_DIR=/tmp/task2-data \
+            ${{ steps.meta.outputs.tag }}
+
+      - name: Wait for / to respond
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/ > /dev/null 2>&1; then
+              echo "Server up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server did not respond on / within 30s"
+          exit 1
+
+      - name: Container logs (always)
+        if: always()
+        run: docker logs task2-smoke || true
+
+      - name: Stop container
+        if: always()
+        run: docker stop task2-smoke || true
+
+      - name: Save image
+        run: docker save ${{ steps.meta.outputs.tag }} | gzip > /tmp/task2-agent.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: task2-agent-image
+          path: /tmp/task2-agent.tar.gz
+          retention-days: 1
+
+  deploy:
+    needs: build-and-smoke
+    runs-on: ubuntu-latest
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: task2-agent-image
+          path: /tmp
+
+      - name: Configure SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Trust host key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_HOST_KEY }}" >> ~/.ssh/known_hosts
+
+      - name: Copy image to host
+        run: |
+          scp /tmp/task2-agent.tar.gz \
+            ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}:/tmp/task2-agent.tar.gz
+
+      - name: Load image and restart container
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          IMAGE: ${{ needs.build-and-smoke.outputs.image-tag }}
+          DEPLOY_NETWORK: ${{ vars.DEPLOY_NETWORK || 'deploy_default' }}
+          DATA_DIR: ${{ vars.DEPLOY_DATA_DIR || '/opt/task2/data' }}
+        run: |
+          # NOTE: env vars are passed inline to the remote shell. They are visible
+          # in `ps` on the host for the duration of the command. Acceptable for a
+          # single-VM deploy; revisit if the box is shared.
+          ssh ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }} \
+            IMAGE="$IMAGE" \
+            DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
+            DEPLOY_NETWORK="$DEPLOY_NETWORK" \
+            DATA_DIR="$DATA_DIR" \
+            bash -se <<'REMOTE'
+          set -euo pipefail
+          gunzip -c /tmp/task2-agent.tar.gz | docker load
+          rm -f /tmp/task2-agent.tar.gz
+          mkdir -p "$DATA_DIR"
+          docker rm -f task2-agent 2>/dev/null || true
+          docker run -d \
+            --name task2-agent \
+            --restart unless-stopped \
+            --network "$DEPLOY_NETWORK" \
+            --network-alias task2-agent \
+            -e DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
+            -e AGENT_RESTRICT_GOTO=true \
+            -v "${DATA_DIR}:/app/data" \
+            "$IMAGE"
+          # Keep the last 3 images, prune the rest
+          docker image ls task2-agent --format '{{.ID}} {{.CreatedAt}}' \
+            | sort -k2 -r | tail -n +4 | awk '{print $1}' \
+            | xargs -r docker rmi -f || true
+          REMOTE
