@@ -280,11 +280,12 @@ def build_browser_tool_list(
         ),
         Tool(
             "click",
-            "Click element by ID from list_interactive.",
+            "Click an element by ID; for <select> elements, pass `value` to choose an option.",
             {
                 "type": "object",
                 "properties": {
                     "id": {"type": "integer"},
+                    "value": {"type": "string"},
                     "reason": {"type": "string"},
                 },
                 "required": ["id", "reason"],
@@ -305,20 +306,6 @@ def build_browser_tool_list(
                 "required": ["id", "text", "reason"],
             },
             fns["type"],
-        ),
-        Tool(
-            "select_option",
-            "Choose a value on a <select> element by ID.",
-            {
-                "type": "object",
-                "properties": {
-                    "id": {"type": "integer"},
-                    "value": {"type": "string"},
-                    "reason": {"type": "string"},
-                },
-                "required": ["id", "value", "reason"],
-            },
-            fns["select_option"],
         ),
         Tool(
             "press_key",
