@@ -104,6 +104,9 @@ async def test_click_on_select_without_value_short_circuits():
         assert "value" in out
         assert "options" in out
         assert f"id={sid}" in out
+        # Mirror the unit-test guard: the new unified-click error must not
+        # mention `select_option`, since the LLM no longer has that tool.
+        assert "select_option" not in out
     finally:
         await s.close()
 
@@ -385,6 +388,6 @@ async def test_click_with_value_on_link_flags_stale_eid():
         assert "not a <select>" in out
         assert "list_interactive" in out
         # Page must NOT have navigated.
-        assert s.page.url.startswith("data:text/html"), s.page.url
+        assert s.page.url == url, s.page.url
     finally:
         await s.close()
