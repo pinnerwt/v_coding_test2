@@ -77,6 +77,12 @@ class BrowserSession:
             self._element_map.clear()
             next_id = 0
 
+            def _ax_prop(n: dict[str, Any], key: str) -> Any:
+                for prop in n.get("properties", []) or []:
+                    if prop.get("name") == key:
+                        return (prop.get("value") or {}).get("value")
+                return None
+
             # Each interactive AX node carries a backendDOMNodeId pointing
             # at its real DOM element. We resolve that to a Runtime
             # objectId and tag the element with `data-agent-eid="<eid>"`,
@@ -146,6 +152,12 @@ class BrowserSession:
                             raw = (res.get("result") or {}).get("value") or ""
                             if raw:
                                 entry["placeholder"] = raw
+                    for prop_name in ("expanded", "disabled", "checked", "selected"):
+                        pv = _ax_prop(node, prop_name)
+                        # `checked` is emitted as a tristate string ("true"/"false"/"mixed");
+                        # `expanded`/`disabled`/`selected` are plain booleans. Normalize.
+                        if pv is True or pv == "true":
+                            entry[prop_name] = True
                     flat.append(entry)
                     self._element_map[eid] = self.page.locator(f'[data-agent-eid="{eid}"]')
                     next_id += 1

@@ -275,3 +275,40 @@ async def test_snapshot_textbox_placeholder():
         assert bare, "expected at least one textbox without placeholder"
     finally:
         await s.close()
+
+
+HTML_STATES = """<!doctype html><html><body>
+<button aria-expanded="true">Menu</button>
+<button disabled>Submit</button>
+<input type=checkbox checked>
+<input type=radio>
+<select>
+  <option selected>A</option>
+  <option>B</option>
+</select>
+</body></html>"""
+
+
+@pytest.mark.asyncio
+async def test_snapshot_state_booleans():
+    """expanded/disabled/checked/selected must surface from the AX tree
+    so the agent can tell that a menu is already open, a submit is
+    greyed out, a box is already ticked, etc."""
+    s = BrowserSession()
+    await s.start()
+    try:
+        url = "data:text/html;base64," + base64.b64encode(HTML_STATES.encode()).decode()
+        tools = build_browser_tools(s, restrict_goto=False)
+        await tools["goto"](url=url)
+        snap = json.loads(await tools["list_interactive"]())
+        by_name = {e["name"]: e for e in snap if e["name"]}
+        assert by_name["Menu"].get("expanded") is True, by_name.get("Menu")
+        assert by_name["Submit"].get("disabled") is True, by_name.get("Submit")
+        cb = next(e for e in snap if e["role"] == "checkbox")
+        assert cb.get("checked") is True, cb
+        radio = next(e for e in snap if e["role"] == "radio")
+        # Unchecked radio must NOT have checked: true. May omit the field
+        # OR set it to false; pick one and stick with it for stability.
+        assert not radio.get("checked"), radio
+    finally:
+        await s.close()
