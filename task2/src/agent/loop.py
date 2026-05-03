@@ -138,6 +138,7 @@ class ReactLoop:
         diff_inject_max_lines: int = 50,
         reason_log: list[str] | None = None,
         on_visit: Callable[[str], None] | None = None,
+        tape: list[dict[str, Any]] | None = None,
     ):
         self.llm = llm
         self.registry = registry
@@ -147,7 +148,7 @@ class ReactLoop:
         self.qc = question_channel
         self.max_steps = max_steps
         self.send_transient = send_transient
-        self.tape: list[dict[str, Any]] = []
+        self.tape: list[dict[str, Any]] = tape if tape is not None else []
         self.qa: list[tuple[str, str]] = []
         self.read_cache = OffsetCache()
         self.list_interactive_cache = OffsetCache()
