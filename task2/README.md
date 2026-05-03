@@ -61,6 +61,7 @@ Deep links work: `?s=<session_id>` opens that session directly.
 
 - `data/url_notes.db` — SQLite key/value of URL → notes. Persists across sessions.
 - `data/traces/<session_id>.jsonl` — one event per line. Source of truth for the sidebar and `/api/trace/{sid}`. The first event is always `session_started` (carrying the goal), so the sidebar can label entries without a separate index.
+- `data/traces/<session_id>.llm.jsonl` — one JSON line per LLM call (request, response, usage, latency). Developer-only; not read by the UI. Use `scripts/cost_report.py` to summarize cost and per-role token attribution: `uv run python scripts/cost_report.py --session <sid>` or `--all`.
 
 Mount a persistent volume at `/app/data` for cross-deploy survival.
 
