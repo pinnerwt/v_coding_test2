@@ -569,12 +569,26 @@ async def test_read_grep_dedup_returns_synthetic_when_pattern_repeats(tmp_path):
     text = "the quick brown fox jumps over the lazy dog needle here\n"
     browser = _StubBrowser(text)
 
-    async def read_grep(pattern: str, window: int = 200, reason: str = ""):
-        body = await browser.page.evaluate("document.body.innerText")
-        idx = body.lower().find(pattern.lower())
-        if idx < 0:
-            return f"NOT FOUND: {pattern!r}"
-        return body[max(0, idx - window) : idx + len(pattern) + window]
+    async def read_grep(
+        pattern: str,
+        context: int = 80,
+        max_matches: int = 10,
+        offset: int = 0,
+        reason: str = "",
+    ):
+        from agent.tools.browser import build_browser_tools
+
+        class _S:
+            def __init__(self, b):
+                self.page = b.page
+
+        fns = build_browser_tools(_S(browser), restrict_goto=False)
+        return await fns["read_grep"](
+            pattern=pattern,
+            context=context,
+            max_matches=max_matches,
+            offset=offset,
+        )
 
     transport = _mock_llm_calls(
         [
@@ -595,7 +609,9 @@ async def test_read_grep_dedup_returns_synthetic_when_pattern_repeats(tmp_path):
                 "type": "object",
                 "properties": {
                     "pattern": {"type": "string"},
-                    "window": {"type": "integer"},
+                    "context": {"type": "integer"},
+                    "max_matches": {"type": "integer"},
+                    "offset": {"type": "integer"},
                     "reason": {"type": "string"},
                 },
                 "required": ["pattern"],
