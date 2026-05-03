@@ -65,11 +65,15 @@ def _action_call_str(action: str, args: dict) -> str:
 def _render_narrative(tape: list[dict[str, Any]]) -> str:
     if not tape:
         return ""
+
+    def _flat(s: str) -> str:
+        return (s or "").replace("\n", " ").replace("\r", " ").strip()
+
     lines = ["## Action history"]
     for i, step in enumerate(tape):
-        url = step.get("url", "")
+        url = _flat(step.get("url", ""))
         call = _action_call_str(step.get("action", ""), step.get("args", {}))
-        reason = step.get("reason", "")
+        reason = _flat(step.get("reason", ""))
         lines.append(f"step {i} | {url} | {call} | {reason}")
     return "\n".join(lines)
 

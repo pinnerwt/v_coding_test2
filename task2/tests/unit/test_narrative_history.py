@@ -51,3 +51,20 @@ def test_narrative_unbounded():
     for i in range(25):
         assert f"step {i} |" in sys_content
         assert f"reason {i}" in sys_content
+
+
+def test_narrative_flattens_multiline_reason():
+    """A reason with embedded newlines must not break the one-line-per-step format."""
+    tape = [
+        _step("https://a.com", "read", {}, "line1\nline2\nline3", "obs"),
+        _step("https://b.com", "click", {"id": 7}, "next step", "obs"),
+    ]
+    msgs = build_messages(
+        system="<sys>", goal="g", qa=[], url_notes="", tape=tape,
+        page_header="URL=", replan_hint=None,
+    )
+    sys_content = msgs[0]["content"]
+    # The step-0 line stays one line: contains all three reason fragments separated by spaces.
+    assert "step 0 | https://a.com | read() | line1 line2 line3" in sys_content
+    # And the step-1 line still appears as its own line, not as a fragment of step 0's reason.
+    assert "\nstep 1 | https://b.com |" in sys_content
