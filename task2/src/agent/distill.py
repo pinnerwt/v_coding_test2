@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Protocol
+from urllib.parse import urlsplit, urlunsplit
 
 from agent.llm import LLMClient
 from agent.notes_store import NotesStore
@@ -10,11 +11,25 @@ class _TraceLike(Protocol):
     def write(self, event: dict[str, Any]) -> None: ...
 
 
+def root_url(url: str) -> str:
+    """Return the site-root form of `url`: scheme://netloc/. Distillation
+    is keyed at this granularity so a site's durable facts are shared
+    across every page on it."""
+    if not url:
+        return url
+    parts = urlsplit(url)
+    if not parts.scheme or not parts.netloc:
+        return url
+    return urlunsplit((parts.scheme, parts.netloc, "/", "", ""))
+
+
 _PROMPT = (
-    "You are extracting durable PAGE-FACTS from a single browsing session, "
-    "to help any FUTURE agent reach ANY goal on this URL.\n\n"
+    "You are extracting durable SITE-FACTS from a single browsing session. "
+    "These bullets are persisted across runs and will be loaded as the "
+    "starting URL-notes for the next session that visits this site — write "
+    "them for a future agent that has never seen this site before.\n\n"
     "Output ≤10 short bullets, one per line, prefixed by '- '. Each bullet "
-    "must describe the PAGE: selectors and element ids, hidden requirements, "
+    "must describe the SITE: selectors and element ids, hidden requirements, "
     "dead-end actions, walls (Cloudflare/CAPTCHA/login), where data lives, "
     "what filters or dropdowns exist. Reject anything goal-specific (the "
     "value the user asked for in this run, intermediate analyses of that "
@@ -42,10 +57,11 @@ async def distill_page_knowledge(
     user-visible result is unaffected."""
     if notes is None or not url:
         return
+    key = root_url(url)
     try:
-        prior = notes.get(url) or "(none)"
+        prior = notes.get(key) or "(none)"
         user = (
-            f"URL: {url}\n"
+            f"URL: {key}\n"
             f"Goal: {goal}\n"
             f"Status: {status}\n"
             f"Final answer: {answer}\n\n"
@@ -68,7 +84,7 @@ async def distill_page_knowledge(
         text = (msg.get("content") or "").strip()
         if not text:
             return
-        notes.set(url, text)
+        notes.set(key, text)
     except Exception as e:
         if trace is not None:
             trace.write({"type": "distill_failed", "payload": {"error": str(e)[:200]}})

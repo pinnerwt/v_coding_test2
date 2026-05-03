@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent.context import build_messages
-from agent.distill import distill_page_knowledge
+from agent.distill import distill_page_knowledge, root_url
 from agent.force_done import coerce_done_via_llm
 from agent.llm import LLMClient, ToolNameNotAllowed
 from agent.page_diff import (
@@ -230,7 +230,7 @@ class ReactLoop:
             issue_url = self._current_url()
             if step_idx == self.max_steps - 1:
                 url = self._current_url()
-                url_notes = self.notes.get(url) if self.notes else ""
+                url_notes = self.notes.get(root_url(url)) if self.notes else ""
                 result = await coerce_done_via_llm(
                     llm=self.llm,
                     tape=self.tape,
@@ -308,7 +308,7 @@ class ReactLoop:
 
             tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
             url = issue_url
-            url_notes = self.notes.get(url) if self.notes else ""
+            url_notes = self.notes.get(root_url(url)) if self.notes else ""
             interactive_elements = await _maybe_live_interactive_payload(self.browser, self.tape)
             messages = build_messages(
                 system=_SYSTEM,
