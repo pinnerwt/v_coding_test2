@@ -33,7 +33,7 @@ async def main():
     msgs = build_messages(
         system=(
             "You are a web-browsing ReAct agent. Each turn, pick exactly one tool to call. "
-            "Always include a brief `thought` argument explaining your choice. Element IDs "
+            "Always include a brief `reason` argument explaining your choice. Element IDs "
             "come from list_interactive — never invent CSS selectors. Call done(status, "
             "answer) when the user goal is satisfied or impossible."
         ),

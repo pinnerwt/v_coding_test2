@@ -345,9 +345,10 @@ class ReactLoop:
 
             if not reason:
                 obs = (
-                    f"ERROR: tool {name!r} called without `reason` field. The reason "
-                    "field is mandatory: 1-3 sentences capturing what you just observed "
-                    "and why you chose this action. Retry with reason."
+                    f"ERROR: tool {name!r} was NOT executed because the mandatory "
+                    "`reason` field was missing. The reason field is mandatory: 1-3 "
+                    "sentences capturing what you just observed and why you chose this "
+                    "action. Retry with reason."
                 )
                 self.tape.append(
                     {
