@@ -28,3 +28,7 @@ For 1., are we bench maxxing? The goto might not be always better. For 2., good 
 
 Can we stop detect stuck with code? It's almost never possible to handle all the cases. use the periodic forced reason is a good idea.
 How about this: for every tools available, add a "reason" field. Then for the history we only feed URL + action + reason, and don't limit it to 8.
+
+If list_interactive is in the history, make sure it is always the most updated one
+Implement fast-fail and please make the result of list_interactive to be part of the final message, and appended only when the LLM has
+  requested in last 3 requests. The appended result should always be updated before putting into the message.
