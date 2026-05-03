@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 from agent.context import NOVELTY_WINDOW, _obs_fingerprint, build_messages
@@ -107,6 +108,7 @@ class ReactLoop:
         max_auto_advance_hops: int = 32,
         diff_inject_max_lines: int = 50,
         reason_log: list[str] | None = None,
+        on_visit: Callable[[str], None] | None = None,
     ):
         self.llm = llm
         self.registry = registry
@@ -131,6 +133,8 @@ class ReactLoop:
         self._wall_streak: int = 0
         self._wall_kind: Wall | None = None
         self.reason_log: list[str] = reason_log if reason_log is not None else []
+        self._on_visit = on_visit
+        self._last_visit: str | None = None
 
     def _current_url(self) -> str:
         try:
@@ -209,6 +213,11 @@ class ReactLoop:
                 self.trace.write({"type": "done", "payload": result})
                 await self._run_distill(status=result["status"], answer=result["answer"])
                 return result
+            if self._on_visit is not None:
+                u = self._current_url()
+                if u and u != self._last_visit:
+                    self._on_visit(u)
+                    self._last_visit = u
             try:
                 current_text = await self.browser.page.evaluate("document.body.innerText")
             except Exception:
@@ -289,9 +298,7 @@ class ReactLoop:
                     f"tool {e.name!r} is not available right now (masked or "
                     f"unknown). Pick from: {sorted(e.allowed)!r}."
                 )
-                self.tape.append(
-                    {"thought": "", "action": e.name, "args": {}, "obs": obs}
-                )
+                self.tape.append({"thought": "", "action": e.name, "args": {}, "obs": obs})
                 self.trace.write(
                     {
                         "type": "step",
