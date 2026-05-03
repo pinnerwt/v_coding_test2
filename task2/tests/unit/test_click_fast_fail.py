@@ -1,4 +1,4 @@
-"""click()/type()/select_option() must fail in well under 1 second when
+"""click(id, value=...)/type() must fail in well under 1 second when
 the eid no longer maps to a live DOM element.
 
 Before this change, click() invoked Locator.evaluate(...) without timeout=,
@@ -151,7 +151,7 @@ async def test_click_on_select_with_value_dispatches_to_select_option():
     sess = _Sess({3: loc})
     tools = build_browser_tools(sess, restrict_goto=False)
     obs = await tools["click"](id=3, value="Title")
-    assert "selected 'Title' on id=3" in obs
+    assert obs == "selected 'Title' on id=3"
     assert loc.select_calls == 1
     assert loc.last_value == "Title"
     assert loc.click_calls == 0
@@ -169,6 +169,9 @@ async def test_click_on_select_without_value_returns_actionable_error():
     assert "<select>" in obs
     assert "value" in obs
     assert "options" in obs
+    # The new unified click does not mention select_option (LLM no longer has it).
+    # This negative assertion is what flips this test from green→red against today's code.
+    assert "select_option" not in obs
     assert loc.select_calls == 0
     assert loc.click_calls == 0
 
