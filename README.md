@@ -1,10 +1,18 @@
 # Coding test - web agent
 
 ## How to run
+### Server
 ```bash
 # exports the env vars from .env (notably DEEPSEEK_API_KEY) so the uvicorn process inherits them 
 cd task2/
 set -a && . ./.env && set +a && AGENT_RESTRICT_GOTO=true uv run uvicorn agent.server:app_factory --factory --host 127.0.0.1 --port 8001
+```
+
+Then connect to http://127.0.0.1:8001/
+
+### Cost analysis
+```bash
+uv run python scripts/cost_report.py --all
 ```
 
 ## Key design decisions
