@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from agent.context import build_messages
 from agent.llm import LLMClient, ToolNameNotAllowed
+from agent.tools.meta import _normalize
 
 Trigger = Literal["max_steps", "no_progress", "asked_after_clarification"]
 
@@ -119,7 +120,15 @@ async def coerce_done_via_llm(
         args = json.loads(tc["function"]["arguments"] or "{}")
     except json.JSONDecodeError:
         return {"status": "failed", "answer": _placeholder(trigger, n_no_progress)}
-    return {
-        "status": args.get("status", "failed"),
-        "answer": args.get("answer", _placeholder(trigger, n_no_progress)),
-    }
+    status = args.get("status", "failed")
+    answer = args.get("answer", _placeholder(trigger, n_no_progress))
+    evidence = args.get("evidence", "") or ""
+    if status == "success":
+        ev_norm = _normalize(evidence)
+        haystack = " ".join(_normalize(str(s.get("obs", ""))) for s in tape if isinstance(s, dict))
+        if not ev_norm or ev_norm not in haystack:
+            return {
+                "status": "failed",
+                "answer": _placeholder(trigger, n_no_progress),
+            }
+    return {"status": status, "answer": answer}

@@ -71,9 +71,7 @@ def build_meta_tools(
             ev_norm = _normalize(evidence)
             ans_norm = _normalize(answer)
             haystack = " ".join(
-                _normalize(str(s.get("obs", "")))
-                for s in (tape or [])
-                if isinstance(s, dict)
+                _normalize(str(s.get("obs", ""))) for s in (tape or []) if isinstance(s, dict)
             )
             if ev_norm not in haystack:
                 raise ValueError(
@@ -89,14 +87,11 @@ def build_meta_tools(
         elif status == "failed" and evidence:
             ev_norm = _normalize(evidence)
             haystack = " ".join(
-                _normalize(str(s.get("obs", "")))
-                for s in (tape or [])
-                if isinstance(s, dict)
+                _normalize(str(s.get("obs", ""))) for s in (tape or []) if isinstance(s, dict)
             )
             if ev_norm not in haystack:
                 raise ValueError(
-                    f"done() rejected — evidence {evidence!r} not found in any "
-                    "prior observation."
+                    f"done() rejected — evidence {evidence!r} not found in any prior observation."
                 )
         raise LoopDone(status, answer, evidence)
 
