@@ -144,6 +144,8 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
             return []
         out = []
         for p in traces_dir.glob("*.jsonl"):
+            if p.name.endswith(".llm.jsonl"):
+                continue
             sid = p.stem
             goal = ""
             started_at = ""

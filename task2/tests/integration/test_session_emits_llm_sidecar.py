@@ -88,3 +88,25 @@ async def test_run_sync_writes_sidecar_with_usage_passthrough(
     assert first["request"]["model"] == "deepseek-chat"
     assert first["response"]["usage"]["prompt_cache_hit_tokens"] == 30
     assert first["response"]["usage"]["prompt_cache_miss_tokens"] == 12
+
+
+@pytest.mark.asyncio
+async def test_run_sync_does_not_create_phantom_sidecar_session(
+    tmp_path: Path, monkeypatch, llm_transport
+):
+    """Regression: /api/sessions must not list <sid>.llm.jsonl sidecars
+    as separate sessions."""
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+    app = build_app(cfg=Config.from_env(), data_dir=tmp_path, llm_transport=llm_transport)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.post("/api/run_sync", json={"goal": "say hi"})
+        assert r.status_code == 200
+        r2 = await ac.get("/api/sessions")
+        assert r2.status_code == 200
+        sessions = r2.json()
+
+    sids = [s["sid"] for s in sessions]
+    # Exactly one session row for the run we just did. No phantom `*.llm` row.
+    assert len(sessions) == 1, f"unexpected extra sessions: {sids}"
+    assert not any(sid.endswith(".llm") for sid in sids), sids
