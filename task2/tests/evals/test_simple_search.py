@@ -18,6 +18,7 @@ CANNED = [
         {
             "status": "success",
             "answer": "you searched: hello",
+            "evidence": "you searched: hello",
             "reason": "done",
         },
     ),
