@@ -266,3 +266,91 @@ async def test_plateau_interrupt_message_appears_in_system_prompt(tmp_path):
     # Earlier turns must NOT carry it.
     for i in range(4):
         assert "no new information" not in seen_systems[i].lower(), (i, seen_systems[i])
+
+
+@pytest.mark.asyncio
+async def test_plateau_interrupt_clears_on_novel_obs_after_ask(tmp_path):
+    """When the LLM picks `ask_user_question` at the restricted turn and
+    the user's reply is novel, `_plateau_interrupt_pending` must clear
+    so the next turn offers the full toolset again. Otherwise the agent
+    is permanently locked into {reason, done, ask_user_question}."""
+    # 4 stale noopA → arm plateau; restricted turn picks ask_user_question;
+    # the mocked _ask returns "" which is novel vs prior "same" obs → streak
+    # resets to 0. The very next turn must NOT be restricted.
+    actions_to_play = [
+        "noopA",
+        "noopA",
+        "noopA",
+        "noopA",
+        "ask_user_question",
+        "noopA",
+        "noopA",
+    ]
+    seen_tool_sets: list[set[str]] = []
+    idx = {"i": 0}
+
+    async def handler(request):
+        body = json.loads(request.content)
+        names = {t["function"]["name"] for t in body.get("tools", [])}
+        seen_tool_sets.append(names)
+        i = idx["i"]
+        idx["i"] += 1
+        if i >= len(actions_to_play):
+            return _ok_response("noopA")
+        return _ok_response(actions_to_play[i])
+
+    llm = LLMClient("http://t/v1", "m", transport=httpx.MockTransport(handler))
+    reg = ToolRegistry()
+
+    async def noopA():
+        return "same"
+
+    async def reason(text: str = ""):
+        return "noted"
+
+    async def _done(status: str = "failed", answer: str = ""):
+        return ""
+
+    async def _ask(question: str = ""):
+        return "user-novel-reply"
+
+    reg.register(Tool("noopA", "x", {"type": "object", "properties": {}}, noopA))
+    reg.register(
+        Tool(
+            "reason",
+            "x",
+            {"type": "object", "properties": {"text": {"type": "string"}}},
+            reason,
+        )
+    )
+    reg.register(Tool("done", "done", {"type": "object", "properties": {}}, _done))
+    reg.register(
+        Tool(
+            "ask_user_question",
+            "x",
+            {"type": "object", "properties": {"question": {"type": "string"}}},
+            _ask,
+        )
+    )
+
+    qc = QuestionChannel()
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        trace=trace,
+        browser=_Browser(),
+        question_channel=qc,
+        max_steps=8,
+    )
+    await loop.run("g")
+
+    # Turn 4 is the restricted turn (only reason/done/ask offered).
+    assert seen_tool_sets[4] == {"reason", "done", "ask_user_question"}, seen_tool_sets[4]
+    # Turn 5: after ask returned a novel obs, the full toolset must be back.
+    assert "noopA" in seen_tool_sets[5], (
+        f"expected unrestricted toolset on turn 5, got {seen_tool_sets[5]}"
+    )
+    # And the pending flag must be False at this point.
+    assert loop._plateau_interrupt_pending is False

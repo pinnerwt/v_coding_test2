@@ -611,6 +611,11 @@ class ReactLoop:
                     self.no_progress_streak += 1
                 else:
                     self.no_progress_streak = 0
+                    # A novel obs means progress was made — the plateau hint's
+                    # purpose is served, so lift the restriction. Without this,
+                    # ask_user_question's novel reply resets the streak but
+                    # leaves pending=True, locking out all browser tools.
+                    self._plateau_interrupt_pending = False
             self.trace.write(
                 {
                     "type": "step",
@@ -624,6 +629,9 @@ class ReactLoop:
                 }
             )
 
+            # Arm at streak == PLATEAU_INTERRUPT - 1: the streak-counter obs is
+            # already on the tape, so by the time the next (restricted) LLM
+            # turn fires, another stale obs would land as #PLATEAU_INTERRUPT.
             if (
                 name != "reason"
                 and self.no_progress_streak == PLATEAU_INTERRUPT - 1
