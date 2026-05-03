@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from typing import Any
@@ -156,7 +157,8 @@ class ReactLoop:
         self.global_cache = GlobalTextCache()
         self._small_diff_threshold = small_diff_threshold
         self._diff_inject_max_lines = diff_inject_max_lines
-        self._read_grep_seen: dict[str, int] = {}
+        self._read_grep_line_hashes: dict[str, int] = {}
+        self._read_grep_dedup_streak: int = 0
         self._wall_streak: int = 0
         self._wall_kind: Wall | None = None
         self.reason_log: list[str] = reason_log if reason_log is not None else []
@@ -246,7 +248,8 @@ class ReactLoop:
                     self.read_cache.clear()
                     self.list_interactive_cache.clear()
                     self._hidden_tools.clear()
-                    self._read_grep_seen.clear()
+                    self._read_grep_line_hashes.clear()
+                    self._read_grep_dedup_streak = 0
                 # If the previous step was press_key and the page didn't change, hide it.
                 if (
                     self.tape
@@ -369,16 +372,6 @@ class ReactLoop:
                 )
                 continue
 
-            read_grep_synthetic: str | None = None
-            if name == "read_grep" and isinstance(args, dict):
-                pat = (args.get("pattern", "") or "").lower()
-                if pat and pat in self._read_grep_seen:
-                    prior_step = self._read_grep_seen[pat]
-                    read_grep_synthetic = (
-                        f'(pattern "{args.get("pattern", "")}" already searched at '
-                        f"step {prior_step}, no new matches.)"
-                    )
-
             grounding_block: str | None = None
             if name == "read_grep" and isinstance(args, dict):
                 grounding_block = _check_read_grep_grounding(
@@ -491,9 +484,7 @@ class ReactLoop:
                     )
 
             try:
-                if read_grep_synthetic is not None:
-                    obs = read_grep_synthetic
-                elif obs_override is not None:
+                if obs_override is not None:
                     obs = obs_override
                 elif grounding_block is not None:
                     obs = grounding_block
@@ -501,15 +492,41 @@ class ReactLoop:
                     obs = await self.registry.call(name, args)
                     if auto_advance_prefix is not None and isinstance(obs, str):
                         obs = f"{auto_advance_prefix} {obs}"
-                if (
-                    name == "read_grep"
-                    and read_grep_synthetic is None
-                    and isinstance(obs, str)
-                    and not obs.startswith("NOT FOUND:")
-                ):
-                    pat = (args.get("pattern", "") or "").lower()
-                    if pat:
-                        self._read_grep_seen[pat] = step_idx
+                if name == "read_grep" and isinstance(obs, str):
+                    raw_lines = obs.splitlines()
+                    kept: list[str] = []
+                    hidden = 0
+                    has_new = False
+                    for ln in raw_lines:
+                        key = ln.strip()
+                        if not key:
+                            kept.append(ln)
+                            continue
+                        h = hashlib.sha256(key.encode("utf-8")).hexdigest()
+                        if h in self._read_grep_line_hashes:
+                            hidden += 1
+                            continue
+                        self._read_grep_line_hashes[h] = step_idx
+                        kept.append(ln)
+                        has_new = True
+                    if not has_new:
+                        obs = (
+                            f"DUPLICATE: read_grep returned {hidden} lines, all "
+                            "previously shown. Page text has not changed since. "
+                            "Try a different pattern, a different offset, or call done()."
+                        )
+                        self._read_grep_dedup_streak += 1
+                    else:
+                        if hidden > 0:
+                            obs = "\n".join(kept) + (
+                                f"\n  ({hidden} lines hidden — already shown in "
+                                "prior read_grep calls)"
+                            )
+                        else:
+                            obs = "\n".join(kept)
+                        self._read_grep_dedup_streak = 0
+                elif name != "read_grep":
+                    self._read_grep_dedup_streak = 0
             except LoopDone as d:
                 self.trace.write(
                     {
