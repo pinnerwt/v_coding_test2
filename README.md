@@ -97,6 +97,38 @@ These failures are tracked and iterated through benchmark triage.
 
 → Tradeoff: less modular, but more practical
 
+---
+
+### 5. Other design decisions
+
+**Loop / control**
+- Mandatory `reason` field on every tool call; unbounded narrative history rendered in the system prompt — guards (goto allowlist, anti-loop) ground decisions in stated reasons.
+- Separate `reason()` scratchpad tool; agent-callable `note()` was removed.
+- Unified force-done via LLM at three triggers (max_steps, no_progress, asked-state giveup).
+- Tried-and-killed: plateau interrupt machinery (reverted as net-negative).
+
+**Tools / observation**
+- `read_grep`: paginated with offset markers, per-line hash dedup, hidden after 3 duplicate outputs.
+- Auto-advance for `read` and `list_interactive` on cache hits; tools hidden once exhausted.
+- `GlobalTextCache` + `OffsetCache` + small page-diff injection on DOM mutation.
+- AX-tree snapshot enriched with placeholder, `expanded`/`disabled`/`checked`/`selected`, `href`, listbox-option admission.
+- `click` and `select_option` unified into `click(id, value=None)`; fast-fail on stale `eid`.
+
+**Hallucination defenses**
+- `done(success)` requires verbatim evidence validated against the live tape; ungrounded success is downgraded.
+- `goto` constrained to URLs grounded in observed content (not args/reasons); SSRF block on unsafe URLs.
+- Distilled `url_notes` keyed by site root and framed as untrusted page-derived data for the next session.
+
+**Infra / observability**
+- Per-call LLM sidecar logs (`*.llm.jsonl`) consumed by `cost_report.py` with role attribution.
+- Persistent `metrics_history.jsonl` with Δ-vs-prev; `bench-sweep` and `bench-failure-triage` skills institutionalize the eval loop.
+- Parallel agent sessions with queue-aware concurrency matched to the server semaphore.
+- SPA UI + JSON endpoints (replaced `/replay` HTML); bearer-token auth + SPA passcode gate.
+- Deployment: SSH-based Docker CD via `pinner.top` (joins `deploy_default` network), not Zeabur.
+
+**LLM choice**
+- DeepSeek `deepseek-chat` default, reasoning OFF; kept as a one-env-var swap from the original Qwen target.
+
 ## How to run
 ### Server
 ```bash
