@@ -35,41 +35,6 @@ _SYSTEM = (
     "grounded commit then; do not stall."
 )
 
-_REPLAN_HINT = (
-    "REPLAN: You repeated the same action 3 times with the same observation. "
-    "Re-read URL notes and pick a DIFFERENT action this turn — different element, "
-    "navigate elsewhere, call reason() to record the failure, or ask_user_question."
-)
-
-# Force a done(failed) when the agent produces this many consecutive
-# observations whose fingerprints were already seen earlier in the tape.
-# Catches arbitrary-length cycles that the hint state machine misses
-# because a single varied action keeps resetting it. canirun.ai bench
-# case 113 burned 50 steps because no such ceiling existed.
-NO_PROGRESS_GIVEUP = 9
-
-# Inlined here (no longer in agent.context after T6) — still used by the
-# stuck/no-progress detector below. T7 deletes the detector and these too.
-_NOVELTY_WINDOW = 8
-_OBS_FINGERPRINT_LEN = 200
-
-
-def _obs_fingerprint(obs: str) -> str:
-    return (obs or "")[:_OBS_FINGERPRINT_LEN]
-
-
-def _step_key(step: dict) -> tuple:
-    return (
-        step.get("action"),
-        json.dumps(step.get("args", {}), sort_keys=True),
-        step.get("obs"),
-    )
-
-
-def _action_key(name: str, args: dict) -> tuple:
-    return (name, json.dumps(args or {}, sort_keys=True))
-
-
 def _check_read_grep_grounding(pattern: str, goal: str, last_read_obs: str | None) -> str | None:
     """Block read_grep patterns that came from model prior knowledge rather
     than observed page content. Pattern is allowed iff it appears (case-
@@ -129,7 +94,6 @@ class ReactLoop:
         self.send_transient = send_transient
         self.tape: list[dict[str, Any]] = []
         self.qa: list[tuple[str, str]] = []
-        self.no_progress_streak = 0
         self.read_cache = OffsetCache()
         self.list_interactive_cache = OffsetCache()
         self._read_limit = 1600
@@ -177,31 +141,8 @@ class ReactLoop:
                 return t
         raise RuntimeError("done tool not registered")
 
-    def _last_three_match(self) -> bool:
-        if len(self.tape) < 3:
-            return False
-        return _step_key(self.tape[-1]) == _step_key(self.tape[-2]) == _step_key(self.tape[-3])
-
-    def _no_progress(self) -> bool:
-        """True when the last _NOVELTY_WINDOW observations have all been seen
-        earlier in the tape — catches arbitrary-length cycles that
-        _last_three_match misses (e.g. click→list→read→escape→click→…)."""
-        if len(self.tape) < _NOVELTY_WINDOW + 1:
-            return False
-        earlier = self.tape[:-_NOVELTY_WINDOW]
-        recent = self.tape[-_NOVELTY_WINDOW:]
-        earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in earlier}
-        return all(_obs_fingerprint(s.get("obs", "")) in earlier_fps for s in recent)
-
-    def _last_action_args(self) -> tuple | None:
-        if not self.tape:
-            return None
-        s = self.tape[-1]
-        return (s["action"], json.dumps(s.get("args", {}), sort_keys=True))
-
     async def run(self, goal: str) -> dict:
         self._goal = goal
-        state = "none"  # none | hinted | asked | giveup
         for step_idx in range(self.max_steps):
             issue_url = self._current_url()
             if step_idx == self.max_steps - 1:
@@ -284,7 +225,6 @@ class ReactLoop:
             tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
             url = issue_url
             url_notes = self.notes.get(url) if self.notes else ""
-            replan_hint = _REPLAN_HINT if state == "hinted" else None
             messages = build_messages(
                 system=_SYSTEM,
                 goal=goal,
@@ -292,7 +232,7 @@ class ReactLoop:
                 url_notes=url_notes,
                 tape=self.tape,
                 page_header=self._page_header(),
-                replan_hint=replan_hint,
+                replan_hint=None,
                 page_diff=diff_block,
                 wall_banner=wall_banner,
                 reason_log=self.reason_log,
@@ -330,26 +270,6 @@ class ReactLoop:
                         },
                     }
                 )
-                self.no_progress_streak += 1
-                if self.no_progress_streak >= NO_PROGRESS_GIVEUP:
-                    url2 = self._current_url()
-                    url_notes2 = self.notes.get(url2) if self.notes else ""
-                    result = await coerce_done_via_llm(
-                        llm=self.llm,
-                        tape=self.tape,
-                        goal=goal,
-                        qa=list(self.qa),
-                        url=url2,
-                        url_notes=url_notes2,
-                        page_header=self._page_header(),
-                        trigger="no_progress",
-                        n_no_progress=self.no_progress_streak,
-                        done_tool_schema=self._done_tool_schema(),
-                        reason_log=self.reason_log,
-                    )
-                    self.trace.write({"type": "done", "payload": result})
-                    await self._run_distill(status=result["status"], answer=result["answer"])
-                    return result
                 continue
             if usage is not None:
                 self.trace.write({"type": "usage", "payload": usage})
@@ -392,40 +312,6 @@ class ReactLoop:
                     }
                 )
                 continue
-
-            last_aa = self._last_action_args()
-            new_aa = _action_key(name, args)
-            if state == "hinted":
-                if last_aa is not None and new_aa == last_aa:
-                    name = "ask_user_question"
-                    args = {
-                        "question": (
-                            f"I'm stuck on {self._current_url()}: same action keeps "
-                            "yielding the same result. What should I try?"
-                        )
-                    }
-                    state = "asked"
-                else:
-                    state = "none"
-            elif state == "asked" and last_aa is not None and new_aa == last_aa:
-                url2 = self._current_url()
-                url_notes2 = self.notes.get(url2) if self.notes else ""
-                result = await coerce_done_via_llm(
-                    llm=self.llm,
-                    tape=self.tape,
-                    goal=goal,
-                    qa=list(self.qa),
-                    url=url2,
-                    url_notes=url_notes2,
-                    page_header=self._page_header(),
-                    trigger="asked_after_clarification",
-                    n_no_progress=None,
-                    done_tool_schema=self._done_tool_schema(),
-                    reason_log=self.reason_log,
-                )
-                self.trace.write({"type": "done", "payload": result})
-                await self._run_distill(status=result["status"], answer=result["answer"])
-                return result
 
             read_grep_synthetic: str | None = None
             if name == "read_grep" and isinstance(args, dict):
@@ -517,8 +403,6 @@ class ReactLoop:
                         f"(end of page; tried offsets up to {plan.served_offset}, "
                         f"page length {len(text)}). Try read_grep or done()."
                     )
-                    new_fp = _obs_fingerprint(obs)
-                    earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in self.tape}
                     self.tape.append(
                         {
                             "reason": reason,
@@ -528,10 +412,6 @@ class ReactLoop:
                             "url": issue_url,
                         }
                     )
-                    if new_fp in earlier_fps:
-                        self.no_progress_streak += 1
-                    else:
-                        self.no_progress_streak = 0
                     self.trace.write(
                         {
                             "type": "step",
@@ -545,25 +425,6 @@ class ReactLoop:
                             },
                         }
                     )
-                    if self.no_progress_streak >= NO_PROGRESS_GIVEUP:
-                        url2 = self._current_url()
-                        url_notes2 = self.notes.get(url2) if self.notes else ""
-                        result = await coerce_done_via_llm(
-                            llm=self.llm,
-                            tape=self.tape,
-                            goal=goal,
-                            qa=list(self.qa),
-                            url=url2,
-                            url_notes=url_notes2,
-                            page_header=self._page_header(),
-                            trigger="no_progress",
-                            n_no_progress=self.no_progress_streak,
-                            done_tool_schema=self._done_tool_schema(),
-                            reason_log=self.reason_log,
-                        )
-                        self.trace.write({"type": "done", "payload": result})
-                        await self._run_distill(status=result["status"], answer=result["answer"])
-                        return result
                     continue
                 args = {**args, "offset": plan.served_offset}
                 self.read_cache.record(offset=plan.served_offset, served=plan.served_text)
@@ -619,8 +480,6 @@ class ReactLoop:
                 obs = f"ERROR: {e}"
 
             obs_str = obs if isinstance(obs, str) else json.dumps(obs)
-            new_fp = _obs_fingerprint(obs_str)
-            earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in self.tape}
             self.tape.append(
                 {
                     "reason": reason,
@@ -630,10 +489,6 @@ class ReactLoop:
                     "url": issue_url,
                 }
             )
-            if new_fp in earlier_fps:
-                self.no_progress_streak += 1
-            else:
-                self.no_progress_streak = 0
             self.trace.write(
                 {
                     "type": "step",
@@ -648,26 +503,6 @@ class ReactLoop:
                 }
             )
 
-            if self.no_progress_streak >= NO_PROGRESS_GIVEUP:
-                url2 = self._current_url()
-                url_notes2 = self.notes.get(url2) if self.notes else ""
-                result = await coerce_done_via_llm(
-                    llm=self.llm,
-                    tape=self.tape,
-                    goal=goal,
-                    qa=list(self.qa),
-                    url=url2,
-                    url_notes=url_notes2,
-                    page_header=self._page_header(),
-                    trigger="no_progress",
-                    n_no_progress=self.no_progress_streak,
-                    done_tool_schema=self._done_tool_schema(),
-                    reason_log=self.reason_log,
-                )
-                self.trace.write({"type": "done", "payload": result})
-                await self._run_distill(status=result["status"], answer=result["answer"])
-                return result
-
             if name == "goto" and obs_str.startswith("ERROR: blocked goto"):
                 self.trace.write(
                     {
@@ -678,8 +513,5 @@ class ReactLoop:
                         },
                     }
                 )
-
-            if state == "none" and (self._last_three_match() or self._no_progress()):
-                state = "hinted"
 
         raise RuntimeError("ReactLoop: unreachable — max_steps short-circuit must return")

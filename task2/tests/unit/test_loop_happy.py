@@ -87,6 +87,94 @@ async def test_loop_runs_done(tmp_path):
     assert events[-1]["type"] == "done"
 
 
+@pytest.mark.asyncio
+async def test_max_steps_is_only_backstop(tmp_path):
+    """Post-T7: no done(), no stuck-detection. The agent keeps issuing
+    `noop` tool calls; the loop must run exactly `max_steps` LLM turns and
+    return whatever the final-step coerce path emits (a forced done())."""
+    # Step 0..3 = regular noop turns. Step 4 (max_steps - 1) = forced-done
+    # call constrained to {tool_choice: name=done}; the script returns done().
+    call_count = {"n": 0}
+
+    async def handler(request):
+        body = json.loads(request.content.decode())
+        call_count["n"] += 1
+        tc = body.get("tool_choice")
+        if isinstance(tc, dict) and tc.get("function", {}).get("name") == "done":
+            tc_name, tc_args = (
+                "done",
+                {"status": "failed", "answer": "ran out", "reason": "x"},
+            )
+        else:
+            tc_name, tc_args = "noop", {"reason": "still going"}
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": f"c{call_count['n']}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc_name,
+                                        "arguments": json.dumps(tc_args),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    meta = build_meta_tools(question_channel=qc)
+
+    async def noop():
+        return "same"
+
+    reg.register(Tool("noop", "noop", {"type": "object", "properties": {}}, noop))
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                    "answer": {"type": "string"},
+                },
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        trace=trace,
+        browser=_StubBrowser(),
+        question_channel=qc,
+        max_steps=5,
+    )
+    result = await loop.run("anything")
+    # Steps 0..3 ran the regular noop path → 4 tape entries. Step 4 is the
+    # max-steps short-circuit, which calls coerce_done_via_llm and returns
+    # without appending to tape.
+    assert len(loop.tape) == 4
+    # The final result is whatever the forced-done LLM call produced.
+    assert result == {"status": "failed", "answer": "ran out"}
+
+
 def test_react_loop_accepts_anti_loop_config_kwargs(tmp_path):
     from agent.loop import ReactLoop
 
