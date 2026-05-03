@@ -23,7 +23,7 @@ from agent.llm import LLMClient
 from agent.llm_trace import LLMTraceWriter, LoggingLLMClient
 from agent.loop import ReactLoop
 from agent.notes_store import NotesStore
-from agent.tools.browser import build_browser_tool_list
+from agent.tools.browser import _build_allowlist_sources_from_tape, build_browser_tool_list
 from agent.tools.meta import QuestionChannel, build_meta_tool_list
 from agent.tools.registry import ToolRegistry
 from agent.trace import TraceWriter, read_trace
@@ -84,11 +84,11 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                 def allowlist_sources():
                     if not loop_holder:
                         return [goal, *visited_urls]
-                    return (
-                        [goal]
-                        + [step.get("obs", "") for step in loop_holder[0].tape]
-                        + [browser.page.url or ""]
-                        + list(visited_urls)
+                    return _build_allowlist_sources_from_tape(
+                        tape=loop_holder[0].tape,
+                        page_url=browser.page.url or "",
+                        goal=goal,
+                        visited_urls=visited_urls,
                     )
 
                 for t in build_browser_tool_list(

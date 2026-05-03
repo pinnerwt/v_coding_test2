@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from agent.browser_session import BrowserSession
@@ -34,6 +34,38 @@ def _is_goto_allowed(url: str, allowlist: list[str]) -> bool:
         if u in s:
             return True
     return False
+
+
+def _build_allowlist_sources_from_tape(
+    *,
+    tape: Iterable[dict],
+    page_url: str,
+    goal: str,
+    visited_urls: Iterable[str],
+) -> list[str]:
+    """Build the goto-grounding allowlist sources from narrative history.
+
+    Per-step contributions are: the step's `url`, every string-typed value in
+    `args`, and the `reason` text. Obs strings are intentionally NOT included
+    (they are no longer in the agent's context window beyond the recent-3
+    raw obs, so grounding against them would be too narrow).
+    """
+    sources: list[str] = [goal or ""]
+    for step in tape:
+        url = step.get("url", "")
+        if url:
+            sources.append(url)
+        args = step.get("args") or {}
+        if isinstance(args, dict):
+            for v in args.values():
+                if isinstance(v, str):
+                    sources.append(v)
+        reason = step.get("reason", "")
+        if reason:
+            sources.append(reason)
+    sources.append(page_url or "")
+    sources.extend(visited_urls)
+    return sources
 
 
 _READ_LIMIT = 1600
