@@ -48,6 +48,12 @@ _REPLAN_HINT = (
 # case 113 burned 50 steps because no such ceiling existed.
 NO_PROGRESS_GIVEUP = 9
 
+# Force a `reason` step (or done/ask_user) when the agent's no-progress
+# streak hits this threshold — strictly less than NO_PROGRESS_GIVEUP so
+# the agent gets ~5 post-interrupt steps to recover before the hard
+# backstop fires.
+PLATEAU_INTERRUPT = 4
+
 
 def _step_key(step: dict) -> tuple:
     return (
@@ -135,6 +141,7 @@ class ReactLoop:
         self.reason_log: list[str] = reason_log if reason_log is not None else []
         self._on_visit = on_visit
         self._last_visit: str | None = None
+        self._plateau_interrupt_pending: bool = False
 
     def _current_url(self) -> str:
         try:
