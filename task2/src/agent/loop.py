@@ -278,7 +278,12 @@ class ReactLoop:
                     f'{self._wall_kind.value}") instead of retrying navigation.]'
                 )
 
-            tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
+            if self._plateau_interrupt_pending:
+                allowed = {"reason", "done", "ask_user_question"}
+                exclude = {n for n in self.registry.names() if n not in allowed}
+                tools = self.registry.to_openai_tools_filtered(exclude=exclude)
+            else:
+                tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
             url = self._current_url()
             url_notes = self.notes.get(url) if self.notes else ""
             replan_hint = _REPLAN_HINT if state == "hinted" else None
@@ -352,8 +357,17 @@ class ReactLoop:
 
             last_aa = self._last_action_args()
             new_aa = _action_key(name, args)
+            # When `reason` is registered, the plateau interrupt subsumes the
+            # ask_user_question redirect: let the streak keep climbing so the
+            # plateau gate can fire one turn earlier instead of bouncing the
+            # action through ask_user_question (which resets the streak).
+            _has_reason = "reason" in self.registry.names()
             if state == "hinted":
-                if last_aa is not None and new_aa == last_aa:
+                if (
+                    last_aa is not None
+                    and new_aa == last_aa
+                    and not _has_reason
+                ):
                     name = "ask_user_question"
                     args = {
                         "question": (
@@ -592,6 +606,14 @@ class ReactLoop:
                     },
                 }
             )
+
+            if (
+                name != "reason"
+                and self.no_progress_streak == PLATEAU_INTERRUPT - 1
+                and self._last_three_match()
+                and not self._plateau_interrupt_pending
+            ):
+                self._plateau_interrupt_pending = True
 
             if self.no_progress_streak >= NO_PROGRESS_GIVEUP:
                 url2 = self._current_url()

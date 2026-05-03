@@ -3,7 +3,16 @@ force the agent to call `reason` (or done/ask) before the
 NO_PROGRESS_GIVEUP backstop fires at 9. Splits one stuck-spiral into
 1 reflection step + at-most-5 recovery attempts."""
 
-from agent.loop import NO_PROGRESS_GIVEUP, PLATEAU_INTERRUPT
+import json
+
+import httpx
+import pytest
+
+from agent.llm import LLMClient
+from agent.loop import NO_PROGRESS_GIVEUP, PLATEAU_INTERRUPT, ReactLoop
+from agent.tools.meta import QuestionChannel
+from agent.tools.registry import Tool, ToolRegistry
+from agent.trace import TraceWriter
 
 
 def test_plateau_interrupt_threshold_below_giveup():
@@ -11,3 +20,109 @@ def test_plateau_interrupt_threshold_below_giveup():
     leaving room for the agent to recover after the forced reason."""
     assert PLATEAU_INTERRUPT < NO_PROGRESS_GIVEUP
     assert PLATEAU_INTERRUPT == 4
+
+
+class _Browser:
+    class _Page:
+        url = "https://a.test/"
+
+        async def evaluate(self, *_a, **_k):  # noqa: D401 - test stub
+            return ""
+
+    page = _Page()
+
+
+def _ok_response(name: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "c",
+                                "type": "function",
+                                "function": {"name": name, "arguments": "{}"},
+                            }
+                        ],
+                    }
+                }
+            ]
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_plateau_interrupt_restricts_tools_at_threshold(tmp_path):
+    """At streak == PLATEAU_INTERRUPT, the next LLM call's `tools`
+    array must contain only {reason, done, ask_user_question}."""
+    seen_tool_sets: list[set[str]] = []
+
+    async def handler(request):
+        body = json.loads(request.content)
+        names = {t["function"]["name"] for t in body.get("tools", [])}
+        seen_tool_sets.append(names)
+        # Always call noopA — same obs each time, drives the streak up.
+        return _ok_response("noopA")
+
+    llm = LLMClient("http://t/v1", "m", transport=httpx.MockTransport(handler))
+    reg = ToolRegistry()
+
+    async def noopA():
+        return "same"
+
+    async def reason(text: str = ""):
+        return "noted"
+
+    async def _done(status: str = "failed", answer: str = ""):
+        return ""
+
+    async def _ask(question: str = ""):
+        return ""
+
+    reg.register(Tool("noopA", "x", {"type": "object", "properties": {}}, noopA))
+    reg.register(
+        Tool(
+            "reason",
+            "x",
+            {"type": "object", "properties": {"text": {"type": "string"}}},
+            reason,
+        )
+    )
+    reg.register(Tool("done", "done", {"type": "object", "properties": {}}, _done))
+    reg.register(
+        Tool(
+            "ask_user_question",
+            "x",
+            {"type": "object", "properties": {"question": {"type": "string"}}},
+            _ask,
+        )
+    )
+
+    qc = QuestionChannel()
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        trace=trace,
+        browser=_Browser(),
+        question_channel=qc,
+        max_steps=20,
+    )
+    await loop.run("g")
+
+    # The first 4 turns: full tool set offered. The 5th turn (after
+    # streak reaches 4 from turns 1-4 of repeated "same" obs) must be
+    # restricted to {reason, done, ask_user_question}.
+    assert "noopA" in seen_tool_sets[0]
+    restricted_turn = next(
+        (i for i, s in enumerate(seen_tool_sets) if "noopA" not in s),
+        None,
+    )
+    assert restricted_turn is not None, f"no restricted turn seen: {seen_tool_sets}"
+    assert restricted_turn == 4, f"expected restriction at turn 4, got {restricted_turn}"
+    assert seen_tool_sets[restricted_turn] == {"reason", "done", "ask_user_question"}
