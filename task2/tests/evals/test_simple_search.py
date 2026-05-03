@@ -62,6 +62,10 @@ def _scripted_llm(url):
 async def test_simple_search_eval(tmp_path, monkeypatch, http_fixture_server):
     url = http_fixture_server("simple/index.html")
     monkeypatch.setenv("MAX_STEPS", "10")
+    # The fixture site binds to 127.0.0.1, which the production goto guard
+    # blocks (loopback / SSRF protection). Bypass the guard so the LLM-mocked
+    # eval can drive a real browser against the local fixture.
+    monkeypatch.setattr("agent.tools.browser.is_safe_goto_url", lambda _u: (True, ""))
     app = build_app(cfg=Config.from_env(), data_dir=tmp_path, llm_transport=_scripted_llm(url))
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
