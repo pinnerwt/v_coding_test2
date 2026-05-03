@@ -5,6 +5,7 @@ import json
 import os
 import time
 import uuid
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -72,14 +73,16 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                 reg = ToolRegistry()
                 loop_holder: list = []
                 reason_log: list[str] = []
+                visited_urls: deque[str] = deque(maxlen=64)
 
                 def allowlist_sources():
                     if not loop_holder:
-                        return [goal]
+                        return [goal, *visited_urls]
                     return (
                         [goal]
                         + [step.get("obs", "") for step in loop_holder[0].tape]
                         + [browser.page.url or ""]
+                        + list(visited_urls)
                     )
 
                 for t in build_browser_tool_list(
@@ -118,6 +121,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                         max_auto_advance_hops=cfg.max_auto_advance_hops,
                         diff_inject_max_lines=cfg.diff_inject_max_lines,
                         reason_log=reason_log,
+                        on_visit=visited_urls.append,
                     )
                     loop_holder.append(loop)
                     return await loop.run(goal)
