@@ -5,6 +5,8 @@ narrative section that the system prompt carries, and the `## Recent observation
 (last 3)` window in the user message. The legacy `thought` term must be gone.
 """
 
+import re
+
 from agent.loop import _SYSTEM
 
 
@@ -27,4 +29,35 @@ def test_system_prompt_mentions_recent_observations() -> None:
 def test_system_prompt_drops_legacy_thought_field() -> None:
     assert "thought" not in _SYSTEM, (
         "prompt must not reference the obsolete `thought` field"
+    )
+
+
+def test_system_prompt_keeps_list_interactive_grounding() -> None:
+    assert "list_interactive" in _SYSTEM, (
+        "prompt must keep the rule that element IDs come from list_interactive"
+    )
+
+
+def test_system_prompt_keeps_rendered_value_caveat() -> None:
+    flat = re.sub(r"\s+", " ", _SYSTEM)
+    assert "total downloads" in flat and "Downloads last month" in flat, (
+        "prompt must keep the rendered-value caveat with the concrete example "
+        "(downloads-last-month vs total-downloads) — earned its keep on bench"
+    )
+    assert "rendered value" in flat.lower(), (
+        "prompt must explicitly tell the agent to commit the rendered value "
+        "with a one-line caveat rather than searching indefinitely"
+    )
+
+
+def test_system_prompt_keeps_blocked_banner_rule() -> None:
+    assert "[BLOCKED" in _SYSTEM and "blocked by" in _SYSTEM, (
+        "prompt must keep the [BLOCKED: …] banner rule with the "
+        'done(failed, "blocked by <wall>") shape'
+    )
+
+
+def test_system_prompt_keeps_final_step_done_rule() -> None:
+    assert "final" in _SYSTEM.lower() and "done" in _SYSTEM, (
+        "prompt must keep the final-step rule (only `done` available; do not stall)"
     )
