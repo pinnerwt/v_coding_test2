@@ -629,15 +629,4 @@ class ReactLoop:
                 }
             )
 
-            if name == "goto" and obs_str.startswith("ERROR: blocked goto"):
-                self.trace.write(
-                    {
-                        "type": "goto_blocked",
-                        "payload": {
-                            "url": args.get("url", ""),
-                            "reason": "not in observation allowlist",
-                        },
-                    }
-                )
-
         raise RuntimeError("ReactLoop: unreachable — max_steps short-circuit must return")

@@ -102,7 +102,6 @@ async def test_session_started_persisted_first(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_ws_streams_done(tmp_path, monkeypatch):
     monkeypatch.setenv("MAX_STEPS", "5")
-    monkeypatch.setenv("AGENT_RESTRICT_GOTO", "false")
     html = b"<!doctype html><html><body><p>The answer is 42 to the question.</p></body></html>"
     data_url = "data:text/html;base64," + base64.b64encode(html).decode()
     transport = _scripted_llm(

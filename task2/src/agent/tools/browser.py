@@ -1,93 +1,20 @@
 from __future__ import annotations
 
-import re
-from collections.abc import Callable, Iterable
 from typing import Any
 
 from agent.browser_session import BrowserSession
 from agent.tools.registry import Tool
 
-_URL_RE = re.compile(r"https?://[^\s)\"'<>]+")
-_TRAILING_PUNCT = ".,;:!?)]}"
-
-
-def _extract_urls(text: str) -> list[str]:
-    out = []
-    for m in _URL_RE.finditer(text or ""):
-        url = m.group(0)
-        while url and url[-1] in _TRAILING_PUNCT:
-            url = url[:-1]
-        if url:
-            out.append(url)
-    return out
-
-
-def _is_goto_allowed(url: str, allowlist: list[str]) -> bool:
-    if not url:
-        return False
-    u = url.lower()
-    for src in allowlist:
-        s = (src or "").lower()
-        if not s:
-            continue
-        if u in s:
-            return True
-    return False
-
-
-def _build_allowlist_sources_from_tape(
-    *,
-    tape: Iterable[dict],
-    page_url: str,
-    goal: str,
-    visited_urls: Iterable[str],
-) -> list[str]:
-    """Build the goto-grounding allowlist sources from page-grounded history.
-
-    Per-step contributions are: the step's `url` (page URL the browser
-    actually loaded) and `obs` (page text the browser actually rendered).
-    The agent's own `args` and `reason` text are deliberately excluded —
-    otherwise the agent can self-grant access to any URL just by quoting it
-    in its own reasoning or in a blocked goto's args (trace 7bd13ccc).
-    """
-    sources: list[str] = [goal or ""]
-    for step in tape:
-        url = step.get("url", "")
-        if url:
-            sources.append(url)
-        obs = step.get("obs", "")
-        if isinstance(obs, str) and obs:
-            sources.append(obs)
-    sources.append(page_url or "")
-    sources.extend(visited_urls)
-    return sources
-
-
 _READ_LIMIT = 1600
 
 
-def build_browser_tools(
-    session: BrowserSession,
-    *,
-    restrict_goto: bool = True,
-    allowlist_sources: Callable[[], list[str]] | None = None,
-) -> dict[str, Any]:
+def build_browser_tools(session: BrowserSession) -> dict[str, Any]:
     """Return name->callable map (used in tests).
 
     The full Tool list is in build_browser_tool_list.
     """
 
     async def goto(url: str) -> str:
-        if restrict_goto and allowlist_sources is not None:
-            sources = allowlist_sources()
-            allowlist = []
-            for s in sources:
-                allowlist.extend(_extract_urls(s))
-            if allowlist and not _is_goto_allowed(url, allowlist):
-                return (
-                    f"ERROR: blocked goto to {url} — URL not present in prior "
-                    "observations or goal. Use list_interactive + click to navigate."
-                )
         try:
             await session.page.goto(url, wait_until="domcontentloaded", timeout=20_000)
             return f"navigated to {session.page.url}"
@@ -264,15 +191,8 @@ def build_browser_tools(
     }
 
 
-def build_browser_tool_list(
-    session: BrowserSession,
-    *,
-    restrict_goto: bool = True,
-    allowlist_sources: Callable[[], list[str]] | None = None,
-) -> list[Tool]:
-    fns = build_browser_tools(
-        session, restrict_goto=restrict_goto, allowlist_sources=allowlist_sources
-    )
+def build_browser_tool_list(session: BrowserSession) -> list[Tool]:
+    fns = build_browser_tools(session)
     return [
         Tool(
             "goto",

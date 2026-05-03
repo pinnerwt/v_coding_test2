@@ -17,7 +17,6 @@ class Config:
     agent_api_key: str | None
     max_steps: int
     url_note_query_strip: bool
-    restrict_goto: bool
     small_diff_threshold: int
     max_auto_advance_hops: int
     diff_inject_max_lines: int
@@ -31,7 +30,6 @@ class Config:
             agent_api_key=deepseek_key,
             max_steps=int(os.getenv("MAX_STEPS", "50")),
             url_note_query_strip=_bool(os.getenv("URL_NOTE_QUERY_STRIP"), True),
-            restrict_goto=_bool(os.getenv("AGENT_RESTRICT_GOTO"), True),
             small_diff_threshold=int(os.getenv("SMALL_DIFF_THRESHOLD", "50")),
             max_auto_advance_hops=int(os.getenv("MAX_AUTO_ADVANCE_HOPS", "32")),
             diff_inject_max_lines=int(os.getenv("DIFF_INJECT_MAX_LINES", "50")),

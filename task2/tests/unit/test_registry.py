@@ -74,7 +74,7 @@ def test_every_tool_schema_requires_reason():
 
     qc = QuestionChannel()
     # Use None for session - we're only inspecting schemas, not invoking handlers.
-    browser_tools = build_browser_tool_list(session=None, restrict_goto=False)
+    browser_tools = build_browser_tool_list(session=None)
     meta_tools = build_meta_tool_list(question_channel=qc, reason_log=[])
 
     for tool in browser_tools + meta_tools:

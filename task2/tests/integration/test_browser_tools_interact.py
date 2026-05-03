@@ -42,7 +42,7 @@ async def test_click_type_select_press(tmp_path):
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML.encode()).decode()
-        tools = build_browser_tools(s, restrict_goto=False)
+        tools = build_browser_tools(s)
         await tools["goto"](url=url)
         snap = await s.snapshot()
         by_role = {(e["role"], e["name"]): e["id"] for e in snap}
@@ -74,7 +74,7 @@ async def test_list_interactive_emits_options_for_select():
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML_SELECT.encode()).decode()
-        tools = build_browser_tools(s, restrict_goto=False)
+        tools = build_browser_tools(s)
         await tools["goto"](url=url)
         await tools["list_interactive"]()
         snap = await s.snapshot()
@@ -93,7 +93,7 @@ async def test_click_on_select_without_value_short_circuits():
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML_SELECT.encode()).decode()
-        tools = build_browser_tools(s, restrict_goto=False)
+        tools = build_browser_tools(s)
         await tools["goto"](url=url)
         await tools["list_interactive"]()
         snap = await s.snapshot()
@@ -124,7 +124,7 @@ async def test_interactive_ids_are_tagged_on_dom_nodes():
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML.encode()).decode()
-        tools = build_browser_tools(s, restrict_goto=False)
+        tools = build_browser_tools(s)
         await tools["goto"](url=url)
         await tools["list_interactive"]()
         snap = await s.snapshot()
@@ -151,7 +151,7 @@ async def test_stale_eid_attributes_cleared_between_snapshots():
     try:
         url1 = "data:text/html;base64," + base64.b64encode(HTML.encode()).decode()
         url2 = "data:text/html;base64," + base64.b64encode(HTML_SELECT.encode()).decode()
-        tools = build_browser_tools(s, restrict_goto=False)
+        tools = build_browser_tools(s)
         await tools["goto"](url=url1)
         await tools["list_interactive"]()
         await tools["goto"](url=url2)
@@ -184,7 +184,7 @@ async def test_each_id_resolves_to_distinct_dom_node():
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML_MANY_ANON_SELECTS.encode()).decode()
-        tools = build_browser_tools(s, restrict_goto=False)
+        tools = build_browser_tools(s)
         await tools["goto"](url=url)
         await tools["list_interactive"]()
         snap = await s.snapshot()
@@ -211,7 +211,7 @@ async def test_click_on_select_with_bad_value_fails_fast():
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML_SELECT.encode()).decode()
-        tools = build_browser_tools(s, restrict_goto=False)
+        tools = build_browser_tools(s)
         await tools["goto"](url=url)
         await tools["list_interactive"]()
         snap = await s.snapshot()
@@ -242,7 +242,7 @@ async def test_snapshot_link_exposes_href():
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML_LINKS.encode()).decode()
-        tools = build_browser_tools(s, restrict_goto=False)
+        tools = build_browser_tools(s)
         await tools["goto"](url=url)
         await tools["list_interactive"]()
         snap = await s.snapshot()
@@ -273,7 +273,7 @@ async def test_snapshot_textbox_placeholder():
             "data:text/html;charset=utf-8;base64,"
             + base64.b64encode(HTML_PLACEHOLDERS.encode()).decode()
         )
-        tools = build_browser_tools(s, restrict_goto=False)
+        tools = build_browser_tools(s)
         await tools["goto"](url=url)
         await tools["list_interactive"]()
         snap = await s.snapshot()
@@ -310,7 +310,7 @@ async def test_snapshot_state_booleans():
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML_STATES.encode()).decode()
-        tools = build_browser_tools(s, restrict_goto=False)
+        tools = build_browser_tools(s)
         await tools["goto"](url=url)
         await tools["list_interactive"]()
         snap = await s.snapshot()
@@ -350,7 +350,7 @@ async def test_snapshot_listbox_options_appear_when_expanded():
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML_AUTOCOMPLETE.encode()).decode()
-        tools = build_browser_tools(s, restrict_goto=False)
+        tools = build_browser_tools(s)
         await tools["goto"](url=url)
         await tools["list_interactive"]()
         snap = await s.snapshot()
@@ -378,7 +378,7 @@ async def test_click_with_value_on_link_flags_stale_eid():
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML_SELECT_AND_LINK.encode()).decode()
-        tools = build_browser_tools(s, restrict_goto=False)
+        tools = build_browser_tools(s)
         await tools["goto"](url=url)
         await tools["list_interactive"]()
         snap = await s.snapshot()

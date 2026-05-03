@@ -90,7 +90,7 @@ class _Sess:
 @pytest.mark.asyncio
 async def test_click_fast_fails_when_count_zero():
     sess = _Sess({3: _DeadLocator()})
-    tools = build_browser_tools(sess, restrict_goto=False)
+    tools = build_browser_tools(sess)
     t0 = time.monotonic()
     obs = await tools["click"](id=3)
     elapsed = time.monotonic() - t0
@@ -103,7 +103,7 @@ async def test_click_fast_fails_when_count_zero():
 async def test_click_proceeds_when_count_positive():
     loc = _LiveLocator()
     sess = _Sess({3: loc})
-    tools = build_browser_tools(sess, restrict_goto=False)
+    tools = build_browser_tools(sess)
     obs = await tools["click"](id=3)
     assert obs == "clicked id=3"
     assert loc.click_calls == 1
@@ -112,7 +112,7 @@ async def test_click_proceeds_when_count_positive():
 @pytest.mark.asyncio
 async def test_type_fast_fails_when_count_zero():
     sess = _Sess({3: _DeadLocator()})
-    tools = build_browser_tools(sess, restrict_goto=False)
+    tools = build_browser_tools(sess)
     t0 = time.monotonic()
     obs = await tools["type"](id=3, text="hi", submit=False)
     elapsed = time.monotonic() - t0
@@ -124,7 +124,7 @@ async def test_type_fast_fails_when_count_zero():
 async def test_type_proceeds_when_count_positive():
     loc = _LiveLocator()
     sess = _Sess({3: loc})
-    tools = build_browser_tools(sess, restrict_goto=False)
+    tools = build_browser_tools(sess)
     obs = await tools["type"](id=3, text="hi", submit=False)
     assert "typed into id=3" in obs
     assert loc.fill_calls == 1
@@ -136,7 +136,7 @@ async def test_click_with_value_fast_fails_when_count_zero():
     eid surfaces the standard "no longer in DOM" error in well under 1s
     even when the LLM passed a value."""
     sess = _Sess({3: _DeadLocator()})
-    tools = build_browser_tools(sess, restrict_goto=False)
+    tools = build_browser_tools(sess)
     t0 = time.monotonic()
     obs = await tools["click"](id=3, value="x")
     elapsed = time.monotonic() - t0
@@ -149,7 +149,7 @@ async def test_click_with_value_fast_fails_when_count_zero():
 async def test_click_on_select_with_value_dispatches_to_select_option():
     loc = _LiveLocator(tag="SELECT")
     sess = _Sess({3: loc})
-    tools = build_browser_tools(sess, restrict_goto=False)
+    tools = build_browser_tools(sess)
     obs = await tools["click"](id=3, value="Title")
     assert obs == "selected 'Title' on id=3"
     assert loc.select_calls == 1
@@ -162,7 +162,7 @@ async def test_click_on_select_without_value_returns_actionable_error():
     """LLM must be told to pass `value` from the live section's `options`."""
     loc = _LiveLocator(tag="SELECT")
     sess = _Sess({3: loc})
-    tools = build_browser_tools(sess, restrict_goto=False)
+    tools = build_browser_tools(sess)
     obs = await tools["click"](id=3)
     assert obs.startswith("ERROR:")
     assert "id=3" in obs
@@ -183,7 +183,7 @@ async def test_click_on_non_select_with_value_flags_stale_eid():
     ERROR with `Call list_interactive`, not silently click."""
     loc = _LiveLocator(tag="A")
     sess = _Sess({3: loc})
-    tools = build_browser_tools(sess, restrict_goto=False)
+    tools = build_browser_tools(sess)
     obs = await tools["click"](id=3, value="Title")
     assert obs.startswith("ERROR:")
     assert "id=3" in obs
@@ -199,10 +199,10 @@ async def test_select_option_not_in_tool_registry():
     from agent.tools.browser import build_browser_tool_list, build_browser_tools
 
     sess = _Sess({})
-    fns = build_browser_tools(sess, restrict_goto=False)
+    fns = build_browser_tools(sess)
     assert "select_option" not in fns
 
-    tool_list = build_browser_tool_list(sess, restrict_goto=False)
+    tool_list = build_browser_tool_list(sess)
     names = [t.name for t in tool_list]
     assert "select_option" not in names
     assert "click" in names
