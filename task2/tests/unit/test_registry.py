@@ -62,3 +62,32 @@ def test_to_openai_tools_filtered_empty_exclude_returns_all():
     reg = ToolRegistry()
     reg.register(Tool("read", "r", {"type": "object"}, noop))
     assert reg.to_openai_tools_filtered(exclude=set()) == reg.to_openai_tools()
+
+
+def test_every_tool_schema_requires_reason():
+    """Every tool — browser + meta — must have `reason` in both `properties`
+    and `required`. This is the structural contract that the loop relies on
+    to extract the agent's verbalised intent for each action."""
+    from agent.browser_session import BrowserSession  # noqa: F401
+    from agent.tools.browser import build_browser_tool_list
+    from agent.tools.meta import QuestionChannel, build_meta_tool_list
+
+    qc = QuestionChannel()
+    # Use None for session - we're only inspecting schemas, not invoking handlers.
+    browser_tools = build_browser_tool_list(session=None, restrict_goto=False)
+    meta_tools = build_meta_tool_list(question_channel=qc, reason_log=[])
+
+    for tool in browser_tools + meta_tools:
+        params = tool.parameters
+        assert "reason" in params.get("properties", {}), (
+            f"{tool.name}: missing reason in properties"
+        )
+        assert params["properties"]["reason"]["type"] == "string", (
+            f"{tool.name}: reason field must be type=string"
+        )
+        assert "reason" in params.get("required", []), (
+            f"{tool.name}: reason must be in required list"
+        )
+        assert "thought" not in params.get("properties", {}), (
+            f"{tool.name}: legacy `thought` field should be removed"
+        )
