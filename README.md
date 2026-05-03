@@ -1,5 +1,102 @@
 # Coding test - web agent
 
+## Evaluation
+
+The agent is evaluated along three axes:
+
+1. **Task success rate**
+   - Whether the agent completes the task correctly end-to-end
+   - Measured using a small but diverse benchmark set (multi-site, multi-step tasks)
+
+2. **Failure modes**
+   - Categorized into:
+     - hallucination (answer before observing)
+     - incorrect tool usage
+     - stuck / looping behavior
+     - selector / UI mismatch
+   - Benchmarks are designed to intentionally trigger these cases. Used webvoyager for simplicity and clear Q&A form.
+
+3. **Efficiency**
+   - Token usage per task
+   - Latency (number of steps / tool calls)
+
+### Method
+
+- All benchmark runs are logged with traces
+- Failures are manually triaged and recorded in `observations.md`
+- Fixes are validated by re-running failed cases
+
+This forms a lightweight but iterative eval loop:
+benchmark → failure triage → fix → re-run
+
+## Failure Analysis
+
+Common failure patterns observed:
+
+- **Hallucination**
+  - Agent answers before observing the page
+  - Mitigated by gating answer/tool usage based on observed content
+
+- **Tool misuse**
+  - Incorrect sequence of actions (e.g., clicking before locating)
+  - Reduced via stricter tool abstraction and loop design
+
+- **Looping**
+  - Agent repeatedly calls similar tools without progress
+  - Partial mitigation via loop detection and retry strategies
+
+- **Overuse of read()**
+  - Triggered when the model is uncertain
+  - Addressed via caching + offset-based context reuse
+
+These failures are tracked and iterated through benchmark triage.
+
+## Key Design Tradeoffs
+
+### 1. DOM-based interaction vs Vision-based interaction
+
+- DOM-based (current approach)
+  - Pros: lower token cost, structured interaction
+  - Cons: brittle to UI changes
+
+- Vision-based (explored)
+  - Pros: more robust, simpler action space
+  - Cons: extremely high token cost
+
+→ Chose DOM-based for cost efficiency
+
+---
+
+### 2. Full-page context vs Chunked (Agentic RAG)
+
+- Chunked approach reduces token usage
+- But loses positional information (e.g., "third headline")
+
+→ Abandoned chunking for tasks requiring ordering
+
+---
+
+### 3. Handling anti-bot / login walls
+
+- Not handled in current version
+- Would require:
+  - clean IP
+  - real browser (xvfb)
+  - human-like interaction
+
+→ Explicitly out of scope due to complexity and cost
+
+---
+
+### 4. Architecture simplification
+
+- Removed planner/loop separation from first attempt
+- Merged into a single loop for:
+  - lower complexity
+  - better iteration speed
+
+→ Tradeoff: less modular, but more practical
+
 ## How to run
 ### Server
 ```bash
@@ -15,20 +112,6 @@ Then connect to http://127.0.0.1:8001/
 uv run python scripts/cost_report.py --all
 ```
 
-## Key design decisions
-1. React structure: including differnet tool calls (goto, read, click, type, ask user question, done, list_interactives). Conclude with `done` once the agent feels that the information is enough.
-2. Benchmark testing: look at the trace and found that the agent 
- - does not have enough ability on certain tasks
- - Or hallucinate the answer before it even see it on the page
- - Return wrong reasoning/tool calls in certain cases
-3. read() function: was called very often when the LLM does not know what to do. So I created a caching system with hash that auto-add the offset if the old context has been seen.
-4. note() to write down notes for future LLM usage.
-5. Wanted to try agentic RAG, chunked the webpage so that we can skip different read/read_grep calls. However, once we use this, we will lose the context on the order of the content. For example, we will not be able to answer "what is the third headline on BBC news". Gave up in the end.
-6. Do not handle captcha/anti bot/login walls for now. If we do want to bypass this, we would need a cleaner IP (instead of zeabur common cluster) and a X server in the docker (xvfb), and use a real browser with a MCP or mouse/keyboard control. Did it with my Openclaw but it took a lots of time and lots of tokens (see 7.).
-7. Vision: use the vision directly. This includes screenshots different webpage and scroll/click at different coordinates. This is for me the easiest way as a web agent: tool calls are clear and much less. However, the cons in this method is that it simply costs too many tokens. I think this is why Claude was shipped with this.
-8. Summary of different step, reducing prompt token usage with full context.
-9. Use Deepseek api saves my life after my decision to restart the project.
-
 ## Where AI helped me
 1. Implement the TDD/e2e tests
 2. Implement all the codes. 0 codes were written by me.
@@ -40,13 +123,6 @@ uv run python scripts/cost_report.py --all
   - Write down the observations. The fix are often wrongly identified in last try and thus we need to plan further and add more human insight for the design part.
 4. Brainstorming on different topics, but felt that it spotted the wrong error in most of time.
 5. Also asked AI to search on internet on certain design decisions, for the hallucination part. It suggests gating "goto" or "answer" with what we didn't see and it works fine in benchmarks.
-
-## Lesson from [first trial](https://github.com/pinnerwt/v_coding_test)
-1. Planner/loop separation is a huge waste of time.
-2. Openspec is the most token consuming during developement cycle.
-3. Local qwen3.5-27b was slow and benchmarks took much longer than expected.
-4. ci/CLAUDE.md/function calls reused easily.
-5. Design pattern reused, while merging planner/loop into the same loop instance.
 
 # vici — AI Coding Test
 
