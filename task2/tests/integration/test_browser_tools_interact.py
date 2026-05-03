@@ -312,3 +312,38 @@ async def test_snapshot_state_booleans():
         assert not radio.get("checked"), radio
     finally:
         await s.close()
+
+
+HTML_AUTOCOMPLETE = """<!doctype html><html><body>
+<div role="combobox" aria-expanded="true" aria-controls="lb">
+  <input type="text" value="bert">
+</div>
+<ul id="lb" role="listbox">
+  <li role="option" tabindex="0">google-bert/bert-base-uncased</li>
+  <li role="option" tabindex="0">nlpaueb/legal-bert-base-uncased</li>
+</ul>
+<div role="listbox" aria-expanded="false">
+  <div role="option">should-not-appear</div>
+</div>
+</body></html>"""
+
+
+@pytest.mark.asyncio
+async def test_snapshot_listbox_options_appear_when_expanded():
+    """Case-107 fix: when a listbox is expanded (autocomplete dropdown
+    visible), its `option` children must be enumerated as clickable
+    interactive entries. Collapsed listboxes' options stay hidden."""
+    s = BrowserSession()
+    await s.start()
+    try:
+        url = "data:text/html;base64," + base64.b64encode(HTML_AUTOCOMPLETE.encode()).decode()
+        tools = build_browser_tools(s, restrict_goto=False)
+        await tools["goto"](url=url)
+        snap = json.loads(await tools["list_interactive"]())
+        options = [e for e in snap if e["role"] == "option"]
+        names = {e["name"] for e in options}
+        assert "google-bert/bert-base-uncased" in names, options
+        assert "nlpaueb/legal-bert-base-uncased" in names, options
+        assert "should-not-appear" not in names, options
+    finally:
+        await s.close()

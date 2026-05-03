@@ -83,6 +83,38 @@ class BrowserSession:
                         return (prop.get("value") or {}).get("value")
                 return None
 
+            nodes = res.get("nodes", []) or []
+            # Reverse map child→parent (CDP's AX nodes only carry childIds).
+            parent_of: dict[str, str] = {}
+            for n in nodes:
+                pid = n.get("nodeId")
+                for cid in n.get("childIds", []) or []:
+                    parent_of[cid] = pid
+            expanded_listbox_ids: set[str] = set()
+            # Map backendDOMNodeId → AX nodeId so we can resolve `controls` relations.
+            ax_id_by_backend: dict[Any, str] = {}
+            for n in nodes:
+                bdid = n.get("backendDOMNodeId")
+                nid = n.get("nodeId")
+                if bdid is not None and nid is not None:
+                    ax_id_by_backend[bdid] = nid
+            for n in nodes:
+                role_n = (n.get("role") or {}).get("value", "") or ""
+                # Direct case (covers any future Chromium fix where role=listbox
+                # carries expanded).
+                if role_n == "listbox" and _ax_prop(n, "expanded") is True:
+                    expanded_listbox_ids.add(n.get("nodeId"))
+                # Bridging case: combobox.expanded=true → listbox via `controls`
+                # relation. Chromium drops `aria-expanded` on role=listbox (not a
+                # valid ARIA state for that role), so we follow the combobox.
+                if role_n == "combobox" and _ax_prop(n, "expanded") is True:
+                    for prop in n.get("properties", []) or []:
+                        if prop.get("name") == "controls":
+                            for rn in (prop.get("value") or {}).get("relatedNodes", []) or []:
+                                bdid = rn.get("backendDOMNodeId")
+                                if bdid in ax_id_by_backend:
+                                    expanded_listbox_ids.add(ax_id_by_backend[bdid])
+
             # Each interactive AX node carries a backendDOMNodeId pointing
             # at its real DOM element. We resolve that to a Runtime
             # objectId and tag the element with `data-agent-eid="<eid>"`,
@@ -91,9 +123,15 @@ class BrowserSession:
             # bug that hit canirun.ai (case 113): the AX-tree enumeration
             # order is not guaranteed to align with Playwright's role
             # matcher when the AX tree contains synthetic nodes.
-            for node in res.get("nodes", []):
+            for node in nodes:
                 role = (node.get("role") or {}).get("value", "") or ""
-                if role not in _INTERACTIVE_ROLES:
+                if role == "option":
+                    cur = parent_of.get(node.get("nodeId"))
+                    while cur is not None and cur not in expanded_listbox_ids:
+                        cur = parent_of.get(cur)
+                    if cur is None:
+                        continue
+                elif role not in _INTERACTIVE_ROLES:
                     continue
                 bnid = node.get("backendDOMNodeId")
                 if not bnid:
