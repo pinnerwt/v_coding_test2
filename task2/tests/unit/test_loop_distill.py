@@ -295,5 +295,3 @@ async def test_distill_runs_after_max_steps_force_done(tmp_path):
     out = notes.get("https://x.test/")
     assert "max-steps distilled fact" in out
     assert "stale prior content" not in out
-
-

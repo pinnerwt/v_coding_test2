@@ -3,6 +3,7 @@
 The snapshot data flows to the LLM via build_messages's interactive_elements
 section, re-rendered fresh each turn. The tool's return value is the obs that
 lands in the tape — kept small so it doesn't bloat the recent-3-obs window."""
+
 import pytest
 
 from agent.tools.browser import build_browser_tools

@@ -27,9 +27,7 @@ def test_system_prompt_mentions_recent_observations() -> None:
 
 
 def test_system_prompt_drops_legacy_thought_field() -> None:
-    assert "thought" not in _SYSTEM, (
-        "prompt must not reference the obsolete `thought` field"
-    )
+    assert "thought" not in _SYSTEM, "prompt must not reference the obsolete `thought` field"
 
 
 def test_system_prompt_keeps_list_interactive_grounding() -> None:

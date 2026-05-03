@@ -1,2 +1,4 @@
 AI-Coding-Test-*.md
 .env
+.coverage
+coverage.xml

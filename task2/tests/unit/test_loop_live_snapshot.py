@@ -3,6 +3,7 @@ again at message-build time and pass the result to build_messages as
 interactive_elements.
 
 When list_interactive is older than 3 actions, no extra snapshot, no section."""
+
 from __future__ import annotations
 
 import json
@@ -70,9 +71,11 @@ async def test_snapshot_failure_returns_none_not_raises():
     """If the live re-snapshot fails (e.g., page navigated mid-flight),
     return None and let the loop continue without the section, rather than
     crashing the whole turn."""
+
     class _Boom:
         async def snapshot(self, **_):
             raise RuntimeError("boom")
+
     tape = [_li()]
     payload = await _maybe_live_interactive_payload(_Boom(), tape)
     assert payload is None

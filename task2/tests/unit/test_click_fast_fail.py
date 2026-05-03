@@ -4,6 +4,7 @@ the eid no longer maps to a live DOM element.
 Before this change, click() invoked Locator.evaluate(...) without timeout=,
 so Playwright waited 30s for the element. Triple that for the
 tagName-probe + click-fallback chain and a single bad eid burned 60+s."""
+
 from __future__ import annotations
 
 import time
@@ -15,6 +16,7 @@ from agent.tools.browser import build_browser_tools
 
 class _DeadLocator:
     """A Locator whose count() returns 0 — element no longer in DOM."""
+
     async def count(self) -> int:
         return 0
 
@@ -24,6 +26,7 @@ class _DeadLocator:
         # red-bar dev cycle doesn't burn 30s. Test contract is elapsed < 1.0,
         # so a 2s sleep still proves the old slow path before the fast-fail.
         import asyncio
+
         await asyncio.sleep(2)
         raise RuntimeError("Locator.evaluate: Timeout 30000ms exceeded")
 
@@ -42,6 +45,7 @@ class _DeadLocator:
 
 class _LiveLocator:
     """A Locator whose count() returns 1 and whose actions succeed instantly."""
+
     def __init__(self):
         self.click_calls = 0
         self.fill_calls = 0

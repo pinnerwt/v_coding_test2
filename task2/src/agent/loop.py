@@ -65,6 +65,7 @@ element IDs from prior knowledge.
   your best grounded commit then; do not stall.
 """
 
+
 async def _maybe_live_interactive_payload(session, tape: list[dict]) -> str | None:
     """If `tape[-3:]` contains a `list_interactive` step, re-run the snapshot
     against the live page using the most-recent list_interactive's args, and
@@ -278,9 +279,7 @@ class ReactLoop:
             tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
             url = issue_url
             url_notes = self.notes.get(url) if self.notes else ""
-            interactive_elements = await _maybe_live_interactive_payload(
-                self.browser, self.tape
-            )
+            interactive_elements = await _maybe_live_interactive_payload(self.browser, self.tape)
             messages = build_messages(
                 system=_SYSTEM,
                 goal=goal,

@@ -1,5 +1,6 @@
 """build_messages appends a `## Interactive elements (live)` section to the
 user message when given the `interactive_elements` kwarg."""
+
 from agent.context import build_messages
 
 
@@ -66,7 +67,7 @@ def test_section_after_recent_obs():
         tape=tape,
         page_header="HDR",
         replan_hint=None,
-        interactive_elements="[{\"id\":0}]",
+        interactive_elements='[{"id":0}]',
     )
     user = _user_text(msgs)
     obs_idx = user.index("## Recent observations")
