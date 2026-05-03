@@ -58,15 +58,11 @@ def build_messages(
     page_diff: str | None = None,
     wall_banner: str | None = None,
     reason_log: list[str] | None = None,
-    plateau_interrupt: str | None = None,
 ) -> list[dict]:
     sys_parts = [system]
     if replan_hint:
         sys_parts.append("")
         sys_parts.append(replan_hint)
-    if plateau_interrupt:
-        sys_parts.append("")
-        sys_parts.append(plateau_interrupt)
 
     user_parts = [f"Goal: {goal}"]
     if qa:

@@ -41,25 +41,12 @@ _REPLAN_HINT = (
     "navigate elsewhere, call reason() to record the failure, or ask_user_question."
 )
 
-_PLATEAU_INTERRUPT_HINT = (
-    "INTERRUPT: You've taken several actions with no new information. "
-    "Your next action MUST be `reason` (write what you've tried, what's "
-    "blocking, and what to try next), or `done(failed, ...)` with the "
-    "best partial answer, or `ask_user_question` if a human can break the tie."
-)
-
 # Force a done(failed) when the agent produces this many consecutive
 # observations whose fingerprints were already seen earlier in the tape.
 # Catches arbitrary-length cycles that the hint state machine misses
 # because a single varied action keeps resetting it. canirun.ai bench
 # case 113 burned 50 steps because no such ceiling existed.
 NO_PROGRESS_GIVEUP = 9
-
-# Force a `reason` step (or done/ask_user) when the agent's no-progress
-# streak hits this threshold — strictly less than NO_PROGRESS_GIVEUP so
-# the agent gets ~5 post-interrupt steps to recover before the hard
-# backstop fires.
-PLATEAU_INTERRUPT = 4
 
 
 def _step_key(step: dict) -> tuple:
@@ -148,7 +135,6 @@ class ReactLoop:
         self.reason_log: list[str] = reason_log if reason_log is not None else []
         self._on_visit = on_visit
         self._last_visit: str | None = None
-        self._plateau_interrupt_pending: bool = False
 
     def _current_url(self) -> str:
         try:
@@ -285,12 +271,7 @@ class ReactLoop:
                     f'{self._wall_kind.value}") instead of retrying navigation.]'
                 )
 
-            if self._plateau_interrupt_pending:
-                allowed = {"reason", "done", "ask_user_question"}
-                exclude = {n for n in self.registry.names() if n not in allowed}
-                tools = self.registry.to_openai_tools_filtered(exclude=exclude)
-            else:
-                tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
+            tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
             url = self._current_url()
             url_notes = self.notes.get(url) if self.notes else ""
             replan_hint = _REPLAN_HINT if state == "hinted" else None
@@ -305,9 +286,6 @@ class ReactLoop:
                 page_diff=diff_block,
                 wall_banner=wall_banner,
                 reason_log=self.reason_log,
-                plateau_interrupt=(
-                    _PLATEAU_INTERRUPT_HINT if self._plateau_interrupt_pending else None
-                ),
             )
             if self.send_transient is not None:
                 await self.send_transient({"type": "llm_call_start"})
@@ -367,21 +345,8 @@ class ReactLoop:
 
             last_aa = self._last_action_args()
             new_aa = _action_key(name, args)
-            # `reason` in registry signals the plateau-interrupt mechanism is
-            # wired. In that mode, plateau supersedes this hinted→ask redirect:
-            # plateau offers ask_user_question as one of three forced choices
-            # (alongside reason/done), so the user-escape path isn't lost —
-            # just rerouted. The registry check is a deliberate "new mechanism
-            # replaces old" gate, not an accidental coupling; bouncing the
-            # action through ask_user_question here would reset the streak and
-            # prevent the plateau gate from arming on the same turn.
-            _has_reason = "reason" in self.registry.names()
             if state == "hinted":
-                if (
-                    last_aa is not None
-                    and new_aa == last_aa
-                    and not _has_reason
-                ):
+                if last_aa is not None and new_aa == last_aa:
                     name = "ask_user_question"
                     args = {
                         "question": (
@@ -604,18 +569,10 @@ class ReactLoop:
             new_fp = _obs_fingerprint(obs_str)
             earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in self.tape}
             self.tape.append({"thought": thought, "action": name, "args": args, "obs": obs_str})
-            if name == "reason":
-                self._plateau_interrupt_pending = False
+            if new_fp in earlier_fps:
+                self.no_progress_streak += 1
             else:
-                if new_fp in earlier_fps:
-                    self.no_progress_streak += 1
-                else:
-                    self.no_progress_streak = 0
-                    # A novel obs means progress was made — the plateau hint's
-                    # purpose is served, so lift the restriction. Without this,
-                    # ask_user_question's novel reply resets the streak but
-                    # leaves pending=True, locking out all browser tools.
-                    self._plateau_interrupt_pending = False
+                self.no_progress_streak = 0
             self.trace.write(
                 {
                     "type": "step",
@@ -628,17 +585,6 @@ class ReactLoop:
                     },
                 }
             )
-
-            # Arm at streak == PLATEAU_INTERRUPT - 1: the streak-counter obs is
-            # already on the tape, so by the time the next (restricted) LLM
-            # turn fires, another stale obs would land as #PLATEAU_INTERRUPT.
-            if (
-                name != "reason"
-                and self.no_progress_streak == PLATEAU_INTERRUPT - 1
-                and self._last_three_match()
-                and not self._plateau_interrupt_pending
-            ):
-                self._plateau_interrupt_pending = True
 
             if self.no_progress_streak >= NO_PROGRESS_GIVEUP:
                 url2 = self._current_url()
