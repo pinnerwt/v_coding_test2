@@ -46,17 +46,36 @@ Specific deficiencies the bench trace surfaced:
 
 ### New shape
 ```python
-async def read_grep(pattern: str, context: int = 80, max_matches: int = 10) -> str
+async def read_grep(
+    pattern: str,
+    context: int = 80,
+    max_matches: int = 10,
+    offset: int = 0,
+) -> str
 ```
 
-**Output: many matches**
+`offset` skips the first N matches (mirrors `read`/`list_interactive` semantics; not a character offset).
+
+**Output: many matches, `offset=0`**
 ```
-12 matches for "2018" in page text (4521 chars). Showing 10 of 12:
+12 matches for "2018" in page text (4521 chars). Showing matches 0-9 of 12:
   [@312]  …elected 2018-04-03 in a runoff against…
   [@1245] …2018 census recorded 1.2M residents…
   …
   [@4102] …final tour in late 2018 before retiring…
-(2 more matches at offsets 4280, 4399 — call read(offset=4200) to read that region.)
+(2 more matches at offsets 4280, 4399 — call read_grep(pattern="2018", offset=10) for the rest.)
+```
+
+**Output: many matches, `offset=10`**
+```
+12 matches for "2018" in page text (4521 chars). Showing matches 10-11 of 12:
+  [@4280] …referendum held 2018-11-04 in 31 districts…
+  [@4399] …passed in 2018, repealed in 2024…
+```
+
+**Output: `offset` past end of match list**
+```
+NO MORE MATCHES for "2018" at offset=20 (12 total in page). Call read_grep with offset=0..11 or done().
 ```
 
 **Output: single match**
@@ -74,7 +93,7 @@ NO MATCH for "x = 9" in page text (761 chars). The text contains:
 
 ### Why
 - Match-count up front makes "12 matches", "1 match", or "NO MATCH" unmistakable. Eliminates the LLM's window-tweak heuristic.
-- All matches with offsets preserves the structural-navigation use case (long chronological page → find "2018" entries).
+- All matches with offsets, paged through `offset`, preserves the structural-navigation use case (long chronological page → find every "2018" without flooding the context).
 - NO-MATCH vocabulary hint anchors the next pattern to grounded terms, complementing the existing `_check_read_grep_grounding` (which only blocks ungrounded patterns; never suggests grounded ones).
 - Renaming `window`→`context` reduces semantic ambiguity ("window" sounds search-relevant; "context" is clearly snippet width).
 
@@ -88,35 +107,54 @@ NO MATCH for "x = 9" in page text (761 chars). The text contains:
 - Cleared at `loop.py:249` on any page-text mutation, alongside `read_cache` / `list_interactive_cache` / `_hidden_tools`.
 - Synthetic wording: `(pattern "X" already searched at step N, no new matches.)`. Ignores `window`. No escalation, no hide, no streak counter.
 
-### Required additions on top of the existing scaffold
-- Record NOT-FOUND patterns too. Use `self._read_grep_seen` for matched patterns and a parallel `self._read_grep_not_found: dict[str, int]` for misses (or a single dict with a boolean — implementation detail). Dedup synthetic must fire for either.
-- Add `self._read_grep_dedup_streak: int` and the hide-after-K mechanism described below.
-- Reset both new pieces in the same `loop.py:249` block on page mutation.
+### Replacement: hash-based dedup
+Drop `_read_grep_seen` entirely. Replace with one cache keyed on the hash of the actual obs string:
+```python
+self._read_grep_obs_hashes: dict[str, int]   # sha256(obs) → first-seen step_idx
+self._read_grep_dedup_streak: int = 0
+```
 
-### A: strengthen the synthetic
+This subsumes the NOT-FOUND-not-recorded gap by construction (NO MATCH outputs hash too) and eliminates the special-casing of match-vs-no-match output prefixes. Pagination through `offset` produces different obs → different hashes → both pass naturally.
+
+### Dispatch flow at the `read_grep` site (replaces loop.py:372-380, 504-512)
+1. Call the underlying `read_grep` tool. (Cheap — `document.body.innerText` + string scan + small format pass.)
+2. Hash the resulting obs: `h = hashlib.sha256(obs.encode("utf-8")).hexdigest()`.
+3. If `h in self._read_grep_obs_hashes`:
+   - Replace obs with synthetic A (below).
+   - Increment `self._read_grep_dedup_streak`.
+   - Tape and trace receive the synthetic, not the real obs.
+4. Else:
+   - Record `self._read_grep_obs_hashes[h] = step_idx`.
+   - Tape and trace receive the real obs.
+   - Reset `self._read_grep_dedup_streak = 0`.
+5. Any non-`read_grep` tool call also resets `self._read_grep_dedup_streak = 0`.
+6. Page mutation (existing `loop.py:249` block): clear `_read_grep_obs_hashes` AND `_read_grep_dedup_streak` alongside the other caches.
+
+### A: synthetic wording
 Replace the current `"(pattern X already searched at step N, no new matches.)"` with:
 ```
-NO-MATCH-CACHED: pattern "X" already returned NO MATCH at step N.
-The page text has not changed since. Window/context size does not affect matches.
-Try a different pattern from the most recent read, or call done().
+DUPLICATE: read_grep returned the same output as step N. Page text has not changed since.
+Try a different pattern, a different offset, or call done().
 ```
-(If the prior call returned matches rather than NO MATCH, swap "NO MATCH" for "the same matches".)
 
-### C: hide `read_grep` after K identical-pattern hits
-- Add `_read_grep_dedup_streak: int` to `ReactLoop.__init__`.
-- On every `read_grep` dispatch:
-  - If the obs is the dedup synthetic, increment the streak.
-  - Otherwise reset the streak to 0.
-  - Reset triggers: any non-`read_grep` tool call; page mutation (cleared in the same `loop.py:249` block).
-  - **`context` differences do not reset.** Match count and positions are independent of `context`; varying it cannot change the result, so a context-only change still counts as a same-pattern retry.
-- When `_read_grep_dedup_streak >= 2` (i.e. 3rd consecutive dedup-synthetic call), do both:
-  1. Add `read_grep` to `_hidden_tools` (mirrors `read`/`list_interactive` exhaustion at `loop.py:425/457`).
-  2. Return obs:
+### C: hide `read_grep` after K consecutive hash-hits
+- When `self._read_grep_dedup_streak >= 2` (i.e. 3rd consecutive duplicate-output call), do both:
+  1. Add `read_grep` to `self._hidden_tools` (mirrors `read`/`list_interactive` exhaustion at `loop.py:425/457`).
+  2. Replace this turn's obs with the harder message:
      ```
-     read_grep is no longer available this turn — it was returning cached results 3× in a row.
+     read_grep is no longer available this turn — it returned identical output 3× in a row.
      Use 'read' with a different offset, list_interactive, or done().
      ```
 - Re-enable `read_grep` (remove from `_hidden_tools`) on the next page mutation, mirroring how `read` is re-enabled today.
+
+### What does and does not trigger the hide
+| Sequence | Hide? | Why |
+|---|---|---|
+| `(pat=X)` × 3 with no other tool calls | yes (3rd call) | byte-identical obs each time |
+| `(pat=X, offset=0)` then `(pat=X, offset=10)` then `(pat=X, offset=0)` | no | offset=10 produces different obs → hash miss → streak resets |
+| `(pat=X, ctx=80)` then `(pat=X, ctx=300)` | depends | different snippet widths → different hash → no synthetic, no hide. The new match-count-up-front output makes context-tweaks visibly low-value but the loop does not punish them. |
+| `(pat=X, A, X, X, X)` where A is `read` | no for first 3, yes at 5th | non-`read_grep` call resets streak; 3rd consecutive `pat=X` after the reset trips. |
+| `(pat=X)` then navigate (page mutation) then `(pat=X)` | no | hash cache cleared on mutation; treated as fresh call. |
 
 ### Why K=2 (3rd hit triggers)
 Matches the existing `_wall_streak >= 2` cadence (loop.py:271). One escalation threshold across the codebase.
@@ -166,14 +204,14 @@ The `done` trace event payload gains an `evidence` field (additive). Existing be
 ## Tests (TDD red bar before any production change)
 
 ### `tests/unit/test_loop_anti_repeat.py` (extend)
-- `test_read_grep_dedup_streak_hides_tool_after_K_same_pattern_calls`
-- `test_read_grep_dedup_streak_resets_on_different_pattern`
-- `test_read_grep_dedup_streak_resets_on_other_tool`
+- `test_read_grep_obs_hash_dedup_fires_on_byte_identical_repeat`
+- `test_read_grep_obs_hash_dedup_does_not_fire_when_offset_produces_new_output`
+- `test_read_grep_obs_hash_dedup_does_not_fire_when_context_changes_output`
+- `test_read_grep_dedup_streak_hides_tool_after_3_consecutive_dup_outputs`
+- `test_read_grep_dedup_streak_resets_on_other_tool_call`
 - `test_read_grep_dedup_streak_resets_on_page_mutation`
-- `test_read_grep_synthetic_wording_strengthened`
-- `test_read_grep_dedup_streak_does_not_reset_on_context_change`
-- `test_read_grep_not_found_pattern_is_dedup_recorded` — fix for the current gap where NOT-FOUND patterns aren't tracked
-- `test_read_grep_dedup_synthetic_fires_for_repeated_not_found_pattern`
+- `test_read_grep_dedup_synthetic_fires_for_repeated_no_match_pattern`  # replaces the not_found_recorded test — same intent, achieved by hash mechanism
+- `test_read_grep_synthetic_wording_says_DUPLICATE`
 
 ### `tests/unit/test_browser_read_grep.py` (new)
 - `test_read_grep_returns_match_count_and_positions_for_multiple_matches`
