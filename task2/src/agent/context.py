@@ -48,6 +48,7 @@ def build_messages(
     page_diff: str | None = None,
     wall_banner: str | None = None,
     reason_log: list[str] | None = None,
+    interactive_elements: str | None = None,
 ) -> list[dict]:
     sys_parts = [system]
     if replan_hint:
@@ -97,6 +98,11 @@ def build_messages(
         for obs in recent_obs:
             user_parts.append(obs)
             user_parts.append("---")
+
+    if interactive_elements:
+        user_parts.append("")
+        user_parts.append("## Interactive elements (live)")
+        user_parts.append(interactive_elements)
 
     msgs: list[dict] = [
         {"role": "system", "content": "\n".join(sys_parts)},

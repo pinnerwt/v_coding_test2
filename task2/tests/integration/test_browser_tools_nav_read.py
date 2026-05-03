@@ -27,6 +27,8 @@ async def test_goto_read_grep_list(tmp_path):
         assert "Needle" in grep
 
         listing = await tools["list_interactive"]()
-        assert "button" in listing.lower() and "Go" in listing
+        assert "snapshot taken" in listing
+        snap = await s.snapshot()
+        assert any(e["role"] == "button" and "Go" in e.get("name", "") for e in snap)
     finally:
         await s.close()

@@ -1,5 +1,4 @@
 import base64
-import json
 import time
 
 import pytest
@@ -77,7 +76,8 @@ async def test_list_interactive_emits_options_for_select():
         url = "data:text/html;base64," + base64.b64encode(HTML_SELECT.encode()).decode()
         tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
-        snap = json.loads(await tools["list_interactive"]())
+        await tools["list_interactive"]()
+        snap = await s.snapshot()
         combo = next(e for e in snap if e["role"] == "combobox")
         assert combo.get("options") == ["Google", "Custom", "RTX 3090 (24 GB)"]
     finally:
@@ -95,7 +95,8 @@ async def test_click_on_select_short_circuits():
         url = "data:text/html;base64," + base64.b64encode(HTML_SELECT.encode()).decode()
         tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
-        snap = json.loads(await tools["list_interactive"]())
+        await tools["list_interactive"]()
+        snap = await s.snapshot()
         sid = next(e["id"] for e in snap if e["role"] == "combobox")
         out = await tools["click"](id=sid)
         assert out.startswith("ERROR:")
@@ -120,7 +121,8 @@ async def test_interactive_ids_are_tagged_on_dom_nodes():
         url = "data:text/html;base64," + base64.b64encode(HTML.encode()).decode()
         tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
-        snap = json.loads(await tools["list_interactive"]())
+        await tools["list_interactive"]()
+        snap = await s.snapshot()
         # Every entry must have its eid stamped on the actual DOM element.
         for entry in snap:
             eid = entry["id"]
@@ -146,9 +148,10 @@ async def test_stale_eid_attributes_cleared_between_snapshots():
         url2 = "data:text/html;base64," + base64.b64encode(HTML_SELECT.encode()).decode()
         tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url1)
-        json.loads(await tools["list_interactive"]())
+        await tools["list_interactive"]()
         await tools["goto"](url=url2)
-        snap2 = json.loads(await tools["list_interactive"]())
+        await tools["list_interactive"]()
+        snap2 = await s.snapshot()
         # Each id in the second snapshot must resolve to exactly one DOM node.
         for entry in snap2:
             count = await s.page.evaluate(
@@ -178,7 +181,8 @@ async def test_each_id_resolves_to_distinct_dom_node():
         url = "data:text/html;base64," + base64.b64encode(HTML_MANY_ANON_SELECTS.encode()).decode()
         tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
-        snap = json.loads(await tools["list_interactive"]())
+        await tools["list_interactive"]()
+        snap = await s.snapshot()
         combos = [e for e in snap if e["role"] == "combobox"]
         assert len(combos) == 5, f"expected 5 combos, got {len(combos)}"
         # Set the i-th select's value to opt-i-B via list_interactive id.
@@ -204,7 +208,8 @@ async def test_select_option_failure_fast():
         url = "data:text/html;base64," + base64.b64encode(HTML_SELECT.encode()).decode()
         tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
-        snap = json.loads(await tools["list_interactive"]())
+        await tools["list_interactive"]()
+        snap = await s.snapshot()
         sid = next(e["id"] for e in snap if e["role"] == "combobox")
         t0 = time.monotonic()
         out = await tools["select_option"](id=sid, value="NotAnOption")
@@ -234,7 +239,8 @@ async def test_snapshot_link_exposes_href():
         url = "data:text/html;base64," + base64.b64encode(HTML_LINKS.encode()).decode()
         tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
-        snap = json.loads(await tools["list_interactive"]())
+        await tools["list_interactive"]()
+        snap = await s.snapshot()
         links = {e["name"]: e for e in snap if e["role"] == "link"}
         assert links["Foo"]["href"].endswith("/foo"), links["Foo"]
         assert links["Bar"]["href"] == "https://example.com/bar", links["Bar"]
@@ -264,7 +270,8 @@ async def test_snapshot_textbox_placeholder():
         )
         tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
-        snap = json.loads(await tools["list_interactive"]())
+        await tools["list_interactive"]()
+        snap = await s.snapshot()
         textboxes = [e for e in snap if e["role"] in ("textbox", "searchbox")]
         with_ph = [e for e in textboxes if "placeholder" in e]
         assert any(e["placeholder"] == "Search models, datasets, users…" for e in with_ph), (
@@ -300,7 +307,8 @@ async def test_snapshot_state_booleans():
         url = "data:text/html;base64," + base64.b64encode(HTML_STATES.encode()).decode()
         tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
-        snap = json.loads(await tools["list_interactive"]())
+        await tools["list_interactive"]()
+        snap = await s.snapshot()
         by_name = {e["name"]: e for e in snap if e["name"]}
         assert by_name["Menu"].get("expanded") is True, by_name.get("Menu")
         assert by_name["Submit"].get("disabled") is True, by_name.get("Submit")
@@ -339,7 +347,8 @@ async def test_snapshot_listbox_options_appear_when_expanded():
         url = "data:text/html;base64," + base64.b64encode(HTML_AUTOCOMPLETE.encode()).decode()
         tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
-        snap = json.loads(await tools["list_interactive"]())
+        await tools["list_interactive"]()
+        snap = await s.snapshot()
         options = [e for e in snap if e["role"] == "option"]
         names = {e["name"] for e in options}
         assert "google-bert/bert-base-uncased" in names, options

@@ -65,6 +65,29 @@ element IDs from prior knowledge.
   your best grounded commit then; do not stall.
 """
 
+async def _maybe_live_interactive_payload(session, tape: list[dict]) -> str | None:
+    """If `tape[-3:]` contains a `list_interactive` step, re-run the snapshot
+    against the live page using the most-recent list_interactive's args, and
+    return the JSON payload for the `## Interactive elements (live)` section.
+
+    Returns None when list_interactive isn't recent, or when the live snapshot
+    raises (the loop can still proceed without the section)."""
+    last_li = None
+    for step in tape[-3:]:
+        if step.get("action") == "list_interactive":
+            last_li = step
+    if last_li is None:
+        return None
+    args = last_li.get("args") or {}
+    offset = args.get("offset", 0)
+    limit = args.get("limit", 50)
+    try:
+        entries = await session.snapshot(offset=offset, limit=limit)
+    except Exception:
+        return None
+    return json.dumps(entries, ensure_ascii=False)
+
+
 def _check_read_grep_grounding(pattern: str, goal: str, last_read_obs: str | None) -> str | None:
     """Block read_grep patterns that came from model prior knowledge rather
     than observed page content. Pattern is allowed iff it appears (case-
@@ -255,6 +278,9 @@ class ReactLoop:
             tools = self.registry.to_openai_tools_filtered(exclude=self._hidden_tools)
             url = issue_url
             url_notes = self.notes.get(url) if self.notes else ""
+            interactive_elements = await _maybe_live_interactive_payload(
+                self.browser, self.tape
+            )
             messages = build_messages(
                 system=_SYSTEM,
                 goal=goal,
@@ -266,6 +292,7 @@ class ReactLoop:
                 page_diff=diff_block,
                 wall_banner=wall_banner,
                 reason_log=self.reason_log,
+                interactive_elements=interactive_elements,
             )
             if self.send_transient is not None:
                 await self.send_transient({"type": "llm_call_start"})

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable, Iterable
 from typing import Any
@@ -128,7 +127,11 @@ def build_browser_tools(
     async def list_interactive(offset: int = 0, limit: int = 50) -> str:
         try:
             entries = await session.snapshot(offset=offset, limit=limit)
-            return json.dumps(entries, ensure_ascii=False)
+            return (
+                f"snapshot taken: {len(entries)} elements (offset={offset}, "
+                f"limit={limit}); see '## Interactive elements (live)' "
+                "section in user message for the current id list"
+            )
         except Exception as e:
             return f"ERROR: {e}"
 
