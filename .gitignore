@@ -3,3 +3,5 @@ AI-Coding-Test-*.md
 .coverage
 coverage.xml
 !artifacts/coverage.xml
+observations.md
+.claude/scheduled_tasks.lock
