@@ -16,10 +16,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
+from metrics_row import (
+    append_row,
+    compute_deltas,
+    compute_metrics_row,
+    format_deltas,
+    read_last_row,
+)
 
 ROOT = Path(__file__).parent.parent
 DATA = ROOT / "eval" / "webvoyager_tier1.json"
 OUT_DIR = ROOT / "data" / "bench"
+HISTORY_PATH = OUT_DIR / "metrics_history.jsonl"
+LAST_DELTAS_PATH = OUT_DIR / "last_deltas.json"
 
 
 def _count_blocks(data_dir: Path, before: set[Path]) -> int:
@@ -154,6 +163,39 @@ async def main():
         json.dumps({"started": started, "base_url": args.base_url, "results": results}, indent=2)
     )
     print(f"[bench] wrote {out_path}")
+
+    # Append a metrics-history row. Latency we record is the sum of
+    # per-case `elapsed_ms` ("total wall time added task by task") —
+    # under concurrency > 1 this is intentionally NOT the script's
+    # wall-clock runtime, which would under-value cumulative work.
+    # Read the previous row BEFORE appending so deltas reflect last
+    # vs this run, not this run vs itself.
+    try:
+        prev_row = read_last_row(HISTORY_PATH)
+        row = compute_metrics_row(bench_path=out_path, traces_dir=ROOT / "data" / "traces")
+        append_row(row, HISTORY_PATH)
+        deltas = compute_deltas(row, prev_row)
+        LAST_DELTAS_PATH.write_text(
+            json.dumps(
+                {
+                    "ts": row["ts"],
+                    "bench_file": row["bench_file"],
+                    "prev_bench_file": prev_row.get("bench_file") if prev_row else None,
+                    "deltas": deltas,
+                },
+                indent=2,
+            )
+        )
+        print(
+            f"[bench] appended metrics row to {HISTORY_PATH} "
+            f"(latency_sum={row['latency_ms']['sum']}ms, "
+            f"calls={row['tokens']['calls']})"
+        )
+        print(f"[bench] Δ vs previous run ({LAST_DELTAS_PATH}):")
+        print(format_deltas(deltas))
+    except Exception as e:  # pragma: no cover - defensive: bench JSON wrote, don't lose it
+        print(f"[bench] WARN: failed to append metrics row: {e}", file=sys.stderr)
+
     return 0 if succ == n else 1
 
 
