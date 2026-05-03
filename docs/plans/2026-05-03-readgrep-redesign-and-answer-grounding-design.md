@@ -107,54 +107,57 @@ NO MATCH for "x = 9" in page text (761 chars). The text contains:
 - Cleared at `loop.py:249` on any page-text mutation, alongside `read_cache` / `list_interactive_cache` / `_hidden_tools`.
 - Synthetic wording: `(pattern "X" already searched at step N, no new matches.)`. Ignores `window`. No escalation, no hide, no streak counter.
 
-### Replacement: hash-based dedup
-Drop `_read_grep_seen` entirely. Replace with one cache keyed on the hash of the actual obs string:
+### Replacement: per-line hash-based dedup
+Drop `_read_grep_seen` entirely. Replace with one cache keyed on the hash of each individual *line* of read_grep output, accumulated across all read_grep calls in the current page state:
 ```python
-self._read_grep_obs_hashes: dict[str, int]   # sha256(obs) → first-seen step_idx
+self._read_grep_line_hashes: dict[str, int]   # sha256(line.strip()) → first-seen step_idx
 self._read_grep_dedup_streak: int = 0
 ```
 
-This subsumes the NOT-FOUND-not-recorded gap by construction (NO MATCH outputs hash too) and eliminates the special-casing of match-vs-no-match output prefixes. Pagination through `offset` produces different obs → different hashes → both pass naturally.
+**Why per-line, not per-obs.** Hashing the whole obs would dedup only byte-identical calls. Per-line hashing dedups *redundant lines* — so a sequence like `read_grep("error")` (returns 10 error-lines) → `read_grep("auth")` (returns 8 lines, 3 of which were in the error result) presents the LLM with only the 5 truly new auth-lines, not the 3 already-shown ones. Every call carries new information when any exists. This subsumes the NOT-FOUND-not-recorded gap by construction (NO MATCH outputs hash too) and works naturally with pagination, alternate patterns, and context tweaks.
 
 ### Dispatch flow at the `read_grep` site (replaces loop.py:372-380, 504-512)
 1. Call the underlying `read_grep` tool. (Cheap — `document.body.innerText` + string scan + small format pass.)
-2. Hash the resulting obs: `h = hashlib.sha256(obs.encode("utf-8")).hexdigest()`.
-3. If `h in self._read_grep_obs_hashes`:
+2. Split the obs into lines. For each non-empty stripped line:
+   - Compute `h = sha256(line.strip().encode("utf-8")).hexdigest()`.
+   - If `h in self._read_grep_line_hashes`: drop the line, increment `hidden_count`.
+   - Else: record `self._read_grep_line_hashes[h] = step_idx`, keep the line, mark `has_new = True`.
+3. If `has_new` is True:
+   - Reassemble obs from kept lines.
+   - If any lines were hidden, append a one-line note: `  (N lines hidden — already shown in prior read_grep calls)`.
+   - Reset `self._read_grep_dedup_streak = 0`.
+4. If `has_new` is False (every line of this call was already shown):
    - Replace obs with synthetic A (below).
    - Increment `self._read_grep_dedup_streak`.
-   - Tape and trace receive the synthetic, not the real obs.
-4. Else:
-   - Record `self._read_grep_obs_hashes[h] = step_idx`.
-   - Tape and trace receive the real obs.
-   - Reset `self._read_grep_dedup_streak = 0`.
 5. Any non-`read_grep` tool call also resets `self._read_grep_dedup_streak = 0`.
-6. Page mutation (existing `loop.py:249` block): clear `_read_grep_obs_hashes` AND `_read_grep_dedup_streak` alongside the other caches.
+6. Page mutation (existing `loop.py:249` block): clear `_read_grep_line_hashes` AND `_read_grep_dedup_streak` alongside the other caches.
 
 ### A: synthetic wording
 Replace the current `"(pattern X already searched at step N, no new matches.)"` with:
 ```
-DUPLICATE: read_grep returned the same output as step N. Page text has not changed since.
-Try a different pattern, a different offset, or call done().
+DUPLICATE: read_grep returned N lines, all previously shown. Page text has not
+changed since. Try a different pattern, a different offset, or call done().
 ```
 
-### C: hide `read_grep` after K consecutive hash-hits
-- When `self._read_grep_dedup_streak >= 2` (i.e. 3rd consecutive duplicate-output call), do both:
+### C: hide `read_grep` after K consecutive fully-redundant calls
+- When `self._read_grep_dedup_streak >= 2` (i.e. 3rd consecutive call where every line was already shown), do both:
   1. Add `read_grep` to `self._hidden_tools` (mirrors `read`/`list_interactive` exhaustion at `loop.py:425/457`).
   2. Replace this turn's obs with the harder message:
      ```
-     read_grep is no longer available this turn — it returned identical output 3× in a row.
-     Use 'read' with a different offset, list_interactive, or done().
+     read_grep is no longer available this turn — it returned only previously-shown
+     lines 3× in a row. Use 'read' with a different offset, list_interactive, or done().
      ```
 - Re-enable `read_grep` (remove from `_hidden_tools`) on the next page mutation, mirroring how `read` is re-enabled today.
 
 ### What does and does not trigger the hide
 | Sequence | Hide? | Why |
 |---|---|---|
-| `(pat=X)` × 3 with no other tool calls | yes (3rd call) | byte-identical obs each time |
-| `(pat=X, offset=0)` then `(pat=X, offset=10)` then `(pat=X, offset=0)` | no | offset=10 produces different obs → hash miss → streak resets |
-| `(pat=X, ctx=80)` then `(pat=X, ctx=300)` | depends | different snippet widths → different hash → no synthetic, no hide. The new match-count-up-front output makes context-tweaks visibly low-value but the loop does not punish them. |
-| `(pat=X, A, X, X, X)` where A is `read` | no for first 3, yes at 5th | non-`read_grep` call resets streak; 3rd consecutive `pat=X` after the reset trips. |
-| `(pat=X)` then navigate (page mutation) then `(pat=X)` | no | hash cache cleared on mutation; treated as fresh call. |
+| `(pat=X)` × 3 with no other tool calls | yes (3rd call) | every line of calls 2 and 3 was already shown by call 1 |
+| `(pat=X, offset=0)` then `(pat=X, offset=10)` then `(pat=X, offset=0)` | no | offset=10 produces fresh `[@N]` lines for matches 10+ → has_new=True → streak resets |
+| `(pat=error)` returning 10 lines, then `(pat=auth)` overlapping by 3 lines | no | 5 new lines pass through with `(3 lines hidden)` note; streak stays at 0 |
+| `(pat=X, ctx=80)` then `(pat=X, ctx=300)` | likely yes at 3rd | wider context produces longer snippets but stripped lines may collide; if they do (e.g. when the `[@N]` prefix matches) all lines hash equal. The new match-count-up-front output makes context-tweaks visibly low-value. |
+| `(pat=X, A, X, X, X)` where A is `read` | no for first 3, yes at 5th | non-`read_grep` call resets streak; 3rd consecutive fully-redundant `pat=X` after the reset trips. |
+| `(pat=X)` then navigate (page mutation) then `(pat=X)` | no | line cache cleared on mutation; treated as fresh call. |
 
 ### Why K=2 (3rd hit triggers)
 Matches the existing `_wall_streak >= 2` cadence (loop.py:271). One escalation threshold across the codebase.
@@ -204,13 +207,13 @@ The `done` trace event payload gains an `evidence` field (additive). Existing be
 ## Tests (TDD red bar before any production change)
 
 ### `tests/unit/test_loop_anti_repeat.py` (extend)
-- `test_read_grep_obs_hash_dedup_fires_on_byte_identical_repeat`
-- `test_read_grep_obs_hash_dedup_does_not_fire_when_offset_produces_new_output`
-- `test_read_grep_obs_hash_dedup_does_not_fire_when_context_changes_output`
-- `test_read_grep_dedup_streak_hides_tool_after_3_consecutive_dup_outputs`
+- `test_read_grep_per_line_dedup_fires_synthetic_when_all_lines_seen`
+- `test_read_grep_per_line_dedup_passes_partial_overlap_with_hidden_count_note`
+- `test_read_grep_per_line_dedup_does_not_fire_when_offset_yields_new_lines`
+- `test_read_grep_dedup_streak_hides_tool_after_3_fully_redundant_calls`
 - `test_read_grep_dedup_streak_resets_on_other_tool_call`
 - `test_read_grep_dedup_streak_resets_on_page_mutation`
-- `test_read_grep_dedup_synthetic_fires_for_repeated_no_match_pattern`  # replaces the not_found_recorded test — same intent, achieved by hash mechanism
+- `test_read_grep_dedup_synthetic_fires_for_repeated_no_match_pattern`  # achieved by per-line hash on the NO MATCH header line
 - `test_read_grep_synthetic_wording_says_DUPLICATE`
 
 ### `tests/unit/test_browser_read_grep.py` (new)

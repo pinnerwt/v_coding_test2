@@ -298,10 +298,10 @@ git commit -m "test(task2): adapt existing read_grep tests to new paginated tool
 
 ---
 
-## Task 3: Hash-based dedup state — replace `_read_grep_seen`
+## Task 3: Per-line hash dedup — replace `_read_grep_seen`
 
 **Files:**
-- Modify: `task2/src/agent/loop.py:159` (init), `loop.py:248-249` (page-mutation clear), `loop.py:372-380` (synthetic dispatch), `loop.py:504-512` (recording).
+- Modify: `task2/src/agent/loop.py:159` (init), `loop.py:248-249` (page-mutation clear), `loop.py:372-380` (delete the pre-call synthetic block), `loop.py:504-512` (replace recording with per-line hash logic).
 - Test: `task2/tests/unit/test_loop_anti_repeat.py` (extend).
 
 **Step 1: Write the failing tests**
@@ -310,22 +310,40 @@ Append to `tests/unit/test_loop_anti_repeat.py`:
 
 ```python
 @pytest.mark.asyncio
-async def test_read_grep_obs_hash_dedup_fires_on_byte_identical_repeat(tmp_path):
-    """Same args → same obs → second call returns the DUPLICATE synthetic."""
+async def test_read_grep_per_line_dedup_fires_synthetic_when_all_lines_seen(tmp_path):
+    """Same args → every line of call 2 was already shown → DUPLICATE synthetic."""
     text = "alpha needle beta needle gamma"
     browser = _StubBrowser(text)
     transport = _mock_llm_calls([
         ("read_grep", {"pattern": "needle", "reason": "first"}),
-        ("read_grep", {"pattern": "needle", "reason": "again"}),
-        ("done", {"status": "failed", "answer": "stop", "evidence": "alpha needle", "reason": "x"}),
+        ("read_grep", {"pattern": "needle", "reason": "again — every line was already shown"}),
+        ("done", {"status": "failed", "answer": "stop", "evidence": "alpha needle beta", "reason": "x"}),
     ])
-    # ... (boilerplate matching test_read_grep_dedup_returns_synthetic_when_pattern_repeats:
-    #      build LLMClient, ToolRegistry, register real read_grep + done, run loop)
+    # ... build + run with the real read_grep registered ...
     assert loop.tape[1]["obs"].startswith("DUPLICATE:")
 
 
 @pytest.mark.asyncio
-async def test_read_grep_obs_hash_dedup_does_not_fire_when_offset_changes_output(tmp_path):
+async def test_read_grep_per_line_dedup_passes_partial_overlap_with_note(tmp_path):
+    """Two different patterns; second call's match-lines overlap by 1 line.
+    Output keeps new lines, drops the overlap, and notes the hidden count."""
+    # Construct text so that both patterns return the SAME line for one match
+    # but the second pattern also produces a unique match.
+    text = "alpha shared line\nbeta unique to second\n"
+    browser = _StubBrowser(text)
+    transport = _mock_llm_calls([
+        ("read_grep", {"pattern": "shared", "reason": "first"}),
+        ("read_grep", {"pattern": "line", "reason": "overlaps shared but adds unique-to-second"}),
+        ("done", {"status": "failed", "answer": "stop", "evidence": "alpha shared line", "reason": "x"}),
+    ])
+    # ... build + run ...
+    obs2 = loop.tape[1]["obs"]
+    assert not obs2.startswith("DUPLICATE:")
+    assert "lines hidden" in obs2  # hidden-count note present
+
+
+@pytest.mark.asyncio
+async def test_read_grep_per_line_dedup_does_not_fire_when_offset_yields_new_lines(tmp_path):
     text = ("XYZ " * 20).strip()
     browser = _StubBrowser(text)
     transport = _mock_llm_calls([
@@ -340,13 +358,13 @@ async def test_read_grep_obs_hash_dedup_does_not_fire_when_offset_changes_output
 
 @pytest.mark.asyncio
 async def test_read_grep_dedup_resets_on_page_mutation(tmp_path):
-    """After a navigation, the same pattern call hashes fresh — no synthetic."""
+    """After a navigation, the line cache is cleared — same pattern → fresh obs."""
     browser = _StubBrowser("alpha needle beta")
     transport = _mock_llm_calls([
         ("read_grep", {"pattern": "needle", "reason": "first"}),
         ("goto", {"url": "https://x.test/2", "reason": "navigate"}),
         ("read_grep", {"pattern": "needle", "reason": "post-nav"}),
-        ("done", {"status": "failed", "answer": "stop", "evidence": "alpha needle", "reason": "x"}),
+        ("done", {"status": "failed", "answer": "stop", "evidence": "alpha needle beta", "reason": "x"}),
     ])
     # ... build + run, mutate browser.set_text after the goto step ...
     assert not loop.tape[2]["obs"].startswith("DUPLICATE:")
@@ -354,10 +372,12 @@ async def test_read_grep_dedup_resets_on_page_mutation(tmp_path):
 
 **Step 2: Run them red**
 
-Run: `uv run pytest tests/unit/test_loop_anti_repeat.py -k "obs_hash or dedup_resets" -v`
-Expected: FAIL — synthetic isn't fired because the new hash mechanism doesn't exist yet.
+Run: `uv run pytest tests/unit/test_loop_anti_repeat.py -k "per_line or dedup_resets" -v`
+Expected: FAIL — the per-line mechanism doesn't exist yet.
 
-**Step 3: Implement hash dedup in `loop.py`**
+**Step 3: Implement per-line hash dedup in `loop.py`**
+
+Add `import hashlib` to module imports if absent.
 
 In `ReactLoop.__init__` (around line 159), replace:
 ```python
@@ -365,47 +385,61 @@ self._read_grep_seen: dict[str, int] = {}
 ```
 with:
 ```python
-import hashlib  # add to module imports if not present
-...
-self._read_grep_obs_hashes: dict[str, int] = {}
+self._read_grep_line_hashes: dict[str, int] = {}
 self._read_grep_dedup_streak: int = 0
 ```
 
 In the page-mutation clear block at line 249, replace `self._read_grep_seen.clear()` with:
 ```python
-self._read_grep_obs_hashes.clear()
+self._read_grep_line_hashes.clear()
 self._read_grep_dedup_streak = 0
 ```
 
-Replace the `read_grep_synthetic` block at lines 372-380 with: nothing for now — synthetic is decided AFTER the call when we have the obs to hash. (We will inject it inside the dispatch try-block.)
+**Delete** the pre-call `read_grep_synthetic` block at lines 372-380 — the new logic runs *after* the call (we need the obs to hash).
 
-Replace the recording block at lines 504-512 with the hash logic. Inside the `try:` that runs the call (around line 493-512), after `obs = await self.registry.call(name, args)` succeeds, when `name == "read_grep"`:
+Replace the recording block at lines 504-512 with the per-line hash logic. Inside the `try:` that runs the call (around line 493-512), after `obs = await self.registry.call(name, args)` returns successfully, when `name == "read_grep"`:
+
 ```python
 if name == "read_grep" and isinstance(obs, str):
-    h = hashlib.sha256(obs.encode("utf-8")).hexdigest()
-    if h in self._read_grep_obs_hashes:
-        prior_step = self._read_grep_obs_hashes[h]
+    raw_lines = obs.splitlines()
+    kept: list[str] = []
+    hidden = 0
+    has_new = False
+    for ln in raw_lines:
+        key = ln.strip()
+        if not key:
+            kept.append(ln)
+            continue
+        h = hashlib.sha256(key.encode("utf-8")).hexdigest()
+        if h in self._read_grep_line_hashes:
+            hidden += 1
+            continue
+        self._read_grep_line_hashes[h] = step_idx
+        kept.append(ln)
+        has_new = True
+    if not has_new:
         obs = (
-            f"DUPLICATE: read_grep returned the same output as step {prior_step}. "
+            f"DUPLICATE: read_grep returned {hidden} lines, all previously shown. "
             "Page text has not changed since. Try a different pattern, "
             "a different offset, or call done()."
         )
         self._read_grep_dedup_streak += 1
     else:
-        self._read_grep_obs_hashes[h] = step_idx
+        if hidden > 0:
+            obs = "\n".join(kept) + (
+                f"\n  ({hidden} lines hidden — already shown in prior read_grep calls)"
+            )
+        else:
+            obs = "\n".join(kept)
         self._read_grep_dedup_streak = 0
-```
-
-Outside the read_grep branch, on any other tool dispatch, reset the streak:
-```python
 elif name != "read_grep":
     self._read_grep_dedup_streak = 0
 ```
 
 **Step 4: Run tests to verify they pass**
 
-Run: `uv run pytest tests/unit/test_loop_anti_repeat.py -k "obs_hash or dedup_resets or read_grep_dedup_returns_synthetic" -v`
-Expected: PASS. (Note: the legacy `test_read_grep_dedup_returns_synthetic_when_pattern_repeats` may need to expect `"DUPLICATE:"` instead of `"already searched"`.)
+Run: `uv run pytest tests/unit/test_loop_anti_repeat.py -k "per_line or dedup_resets or read_grep_dedup_returns_synthetic" -v`
+Expected: PASS. (Note: the legacy `test_read_grep_dedup_returns_synthetic_when_pattern_repeats` will likely need its assertion updated from `"already searched"` to `"DUPLICATE:"` — that's a Task-2 follow-up edit.)
 
 Run: `uv run ruff check src/agent/loop.py tests/unit/test_loop_anti_repeat.py`
 Expected: clean.
@@ -414,29 +448,29 @@ Expected: clean.
 
 ```bash
 git add task2/src/agent/loop.py task2/tests/unit/test_loop_anti_repeat.py
-git commit -m "feat(task2): hash-based read_grep dedup (closes NOT-FOUND tracking gap)"
+git commit -m "feat(task2): per-line hash dedup for read_grep — passes partial overlap"
 ```
 
 ---
 
-## Task 4: Hide `read_grep` after K=2 streak
+## Task 4: Hide `read_grep` after K=2 streak of fully-redundant calls
 
 **Files:**
-- Modify: `task2/src/agent/loop.py` (extend the hash-dedup block from Task 3)
+- Modify: `task2/src/agent/loop.py` (extend the per-line dedup block from Task 3)
 - Test: `task2/tests/unit/test_loop_anti_repeat.py` (extend)
 
 **Step 1: Write the failing tests**
 
 ```python
 @pytest.mark.asyncio
-async def test_read_grep_hidden_after_3_consecutive_dup_outputs(tmp_path):
+async def test_read_grep_hidden_after_3_fully_redundant_calls(tmp_path):
     text = "alpha needle beta"
     browser = _StubBrowser(text)
     transport = _mock_llm_calls([
         ("read_grep", {"pattern": "needle", "reason": "1"}),
-        ("read_grep", {"pattern": "needle", "reason": "2"}),
-        ("read_grep", {"pattern": "needle", "reason": "3"}),
-        ("done", {"status": "failed", "answer": "stop", "evidence": "alpha needle", "reason": "x"}),
+        ("read_grep", {"pattern": "needle", "reason": "2 — every line already shown"}),
+        ("read_grep", {"pattern": "needle", "reason": "3 — every line still already shown"}),
+        ("done", {"status": "failed", "answer": "stop", "evidence": "alpha needle beta", "reason": "x"}),
     ])
     # ... build + run ...
     third = loop.tape[2]["obs"]
@@ -458,27 +492,44 @@ async def test_read_grep_streak_resets_on_other_tool(tmp_path):
     # ... build + run ...
     assert "read_grep" not in loop._hidden_tools
     assert "no longer available" not in loop.tape[3]["obs"]
+
+
+@pytest.mark.asyncio
+async def test_read_grep_partial_overlap_does_not_count_toward_streak(tmp_path):
+    """Calls returning even one new line reset the streak — only fully-
+    redundant calls (DUPLICATE synthetic) accumulate."""
+    # Two patterns that overlap on one line each but each surfaces a unique line.
+    text = "shared one\nshared two\nunique-A only\nunique-B only\n"
+    browser = _StubBrowser(text)
+    transport = _mock_llm_calls([
+        ("read_grep", {"pattern": "shared", "reason": "1"}),
+        ("read_grep", {"pattern": "unique-A", "reason": "2 — new line"}),
+        ("read_grep", {"pattern": "unique-B", "reason": "3 — new line"}),
+        ("done", {"status": "failed", "answer": "stop", "evidence": "unique-A only", "reason": "x"}),
+    ])
+    # ... build + run ...
+    assert "read_grep" not in loop._hidden_tools
 ```
 
 **Step 2: Run them red**
 
-Run: `uv run pytest tests/unit/test_loop_anti_repeat.py -k "hidden_after_3 or streak_resets_on_other" -v`
+Run: `uv run pytest tests/unit/test_loop_anti_repeat.py -k "hidden_after_3 or streak_resets_on_other or partial_overlap_does_not" -v`
 Expected: FAIL — `_hidden_tools` does not yet receive `read_grep`.
 
 **Step 3: Add the hide-after-K logic**
 
-Inside the `read_grep` hash-dedup branch added in Task 3, after the `_read_grep_dedup_streak += 1`:
+Inside the `not has_new` branch added in Task 3, after `self._read_grep_dedup_streak += 1`, append:
 ```python
 if self._read_grep_dedup_streak >= 2:
     self._hidden_tools.add("read_grep")
     obs = (
-        "read_grep is no longer available this turn — it returned identical "
-        "output 3× in a row. Use 'read' with a different offset, "
-        "list_interactive, or done()."
+        "read_grep is no longer available this turn — it returned only "
+        "previously-shown lines 3× in a row. Use 'read' with a different "
+        "offset, list_interactive, or done()."
     )
 ```
 
-(`_hidden_tools` is already cleared on page mutation at `loop.py:248`, so re-enable on navigation is automatic.)
+(`_hidden_tools` is already cleared on page mutation at `loop.py:248`, so re-enable on navigation is automatic. The streak reset on partial overlap is already in place because the `else: ... has_new` branch sets `_read_grep_dedup_streak = 0`.)
 
 **Step 4: Run tests to verify they pass**
 
