@@ -26,7 +26,7 @@ class _FakeSession:
 @pytest.mark.asyncio
 async def test_list_interactive_returns_ack_not_json():
     fake = _FakeSession([{"id": 0, "role": "link", "name": "x"}] * 5)
-    tools = build_browser_tools(fake, restrict_goto=False)
+    tools = build_browser_tools(fake)
     obs = await tools["list_interactive"](offset=0, limit=50)
     # The obs must NOT be the JSON snapshot — that would defeat the purpose.
     assert not obs.startswith("[")
@@ -41,7 +41,7 @@ async def test_list_interactive_returns_ack_not_json():
 async def test_list_interactive_still_calls_snapshot():
     """Eids must be tagged on the live DOM right now — same-turn click safety."""
     fake = _FakeSession([])
-    tools = build_browser_tools(fake, restrict_goto=False)
+    tools = build_browser_tools(fake)
     obs = await tools["list_interactive"](offset=2, limit=10)
     assert fake.snapshot_calls == [{"offset": 2, "limit": 10}]
     assert "offset=2" in obs and "limit=10" in obs

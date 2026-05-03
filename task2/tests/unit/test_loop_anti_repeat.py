@@ -582,7 +582,7 @@ async def test_read_grep_dedup_returns_synthetic_when_pattern_repeats(tmp_path):
             def __init__(self, b):
                 self.page = b.page
 
-        fns = build_browser_tools(_S(browser), restrict_goto=False)
+        fns = build_browser_tools(_S(browser))
         return await fns["read_grep"](
             pattern=pattern,
             context=context,
@@ -1321,7 +1321,7 @@ def _build_real_read_grep_tool(browser):
         def __init__(self, b):
             self.page = b.page
 
-    fns = build_browser_tools(_S(browser), restrict_goto=False)
+    fns = build_browser_tools(_S(browser))
 
     async def read_grep(
         pattern: str,

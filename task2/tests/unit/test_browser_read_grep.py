@@ -18,7 +18,7 @@ class _FakeSession:
 
 
 def _make(text: str):
-    return build_browser_tools(_FakeSession(text), restrict_goto=False)["read_grep"]
+    return build_browser_tools(_FakeSession(text))["read_grep"]
 
 
 @pytest.mark.asyncio

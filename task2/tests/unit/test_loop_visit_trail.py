@@ -1,6 +1,6 @@
 """ReactLoop fires `on_visit(url)` once per turn at the top of the iteration,
 deduping consecutive identical URLs. The server uses this to maintain a
-visited-URL trail for the goto allowlist."""
+visited-URL trail."""
 
 from __future__ import annotations
 
