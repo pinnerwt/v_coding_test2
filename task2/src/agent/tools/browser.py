@@ -42,7 +42,7 @@ _READ_LIMIT = 1600
 def build_browser_tools(
     session: BrowserSession,
     *,
-    restrict_goto: bool = False,
+    restrict_goto: bool = True,
     allowlist_sources: Callable[[], list[str]] | None = None,
 ) -> dict[str, Any]:
     """Return name->callable map (used in tests).
@@ -162,7 +162,7 @@ def build_browser_tools(
 def build_browser_tool_list(
     session: BrowserSession,
     *,
-    restrict_goto: bool = False,
+    restrict_goto: bool = True,
     allowlist_sources: Callable[[], list[str]] | None = None,
 ) -> list[Tool]:
     fns = build_browser_tools(

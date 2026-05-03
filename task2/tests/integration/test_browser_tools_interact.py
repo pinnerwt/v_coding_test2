@@ -31,8 +31,7 @@ HTML_SELECT = """<!doctype html><html><body>
 HTML_MANY_ANON_SELECTS = (
     "<!doctype html><html><body>"
     + "".join(
-        f"<select><option>opt-{i}-A</option><option>opt-{i}-B</option></select>"
-        for i in range(5)
+        f"<select><option>opt-{i}-A</option><option>opt-{i}-B</option></select>" for i in range(5)
     )
     + "</body></html>"
 )
@@ -44,7 +43,7 @@ async def test_click_type_select_press(tmp_path):
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML.encode()).decode()
-        tools = build_browser_tools(s)
+        tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
         snap = await s.snapshot()
         by_role = {(e["role"], e["name"]): e["id"] for e in snap}
@@ -76,7 +75,7 @@ async def test_list_interactive_emits_options_for_select():
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML_SELECT.encode()).decode()
-        tools = build_browser_tools(s)
+        tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
         snap = json.loads(await tools["list_interactive"]())
         combo = next(e for e in snap if e["role"] == "combobox")
@@ -94,7 +93,7 @@ async def test_click_on_select_short_circuits():
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML_SELECT.encode()).decode()
-        tools = build_browser_tools(s)
+        tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
         snap = json.loads(await tools["list_interactive"]())
         sid = next(e["id"] for e in snap if e["role"] == "combobox")
@@ -119,14 +118,14 @@ async def test_interactive_ids_are_tagged_on_dom_nodes():
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML.encode()).decode()
-        tools = build_browser_tools(s)
+        tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
         snap = json.loads(await tools["list_interactive"]())
         # Every entry must have its eid stamped on the actual DOM element.
         for entry in snap:
             eid = entry["id"]
             tagged = await s.page.evaluate(
-                "id => !!document.querySelector(`[data-agent-eid=\"${id}\"]`)",
+                'id => !!document.querySelector(`[data-agent-eid="${id}"]`)',
                 eid,
             )
             assert tagged, f"id={eid} ({entry['role']}) has no data-agent-eid"
@@ -144,11 +143,8 @@ async def test_stale_eid_attributes_cleared_between_snapshots():
     await s.start()
     try:
         url1 = "data:text/html;base64," + base64.b64encode(HTML.encode()).decode()
-        url2 = (
-            "data:text/html;base64,"
-            + base64.b64encode(HTML_SELECT.encode()).decode()
-        )
-        tools = build_browser_tools(s)
+        url2 = "data:text/html;base64," + base64.b64encode(HTML_SELECT.encode()).decode()
+        tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url1)
         json.loads(await tools["list_interactive"]())
         await tools["goto"](url=url2)
@@ -156,7 +152,7 @@ async def test_stale_eid_attributes_cleared_between_snapshots():
         # Each id in the second snapshot must resolve to exactly one DOM node.
         for entry in snap2:
             count = await s.page.evaluate(
-                "id => document.querySelectorAll(`[data-agent-eid=\"${id}\"]`).length",
+                'id => document.querySelectorAll(`[data-agent-eid="${id}"]`).length',
                 entry["id"],
             )
             assert count == 1, f"id={entry['id']} resolves to {count} nodes"
@@ -179,11 +175,8 @@ async def test_each_id_resolves_to_distinct_dom_node():
     s = BrowserSession()
     await s.start()
     try:
-        url = (
-            "data:text/html;base64,"
-            + base64.b64encode(HTML_MANY_ANON_SELECTS.encode()).decode()
-        )
-        tools = build_browser_tools(s)
+        url = "data:text/html;base64," + base64.b64encode(HTML_MANY_ANON_SELECTS.encode()).decode()
+        tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
         snap = json.loads(await tools["list_interactive"]())
         combos = [e for e in snap if e["role"] == "combobox"]
@@ -209,7 +202,7 @@ async def test_select_option_failure_fast():
     await s.start()
     try:
         url = "data:text/html;base64," + base64.b64encode(HTML_SELECT.encode()).decode()
-        tools = build_browser_tools(s)
+        tools = build_browser_tools(s, restrict_goto=False)
         await tools["goto"](url=url)
         snap = json.loads(await tools["list_interactive"]())
         sid = next(e["id"] for e in snap if e["role"] == "combobox")

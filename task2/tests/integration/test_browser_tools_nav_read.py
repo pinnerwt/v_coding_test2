@@ -15,7 +15,7 @@ async def test_goto_read_grep_list(tmp_path):
     try:
         # Serve HTML via data URL
         url = "data:text/html;base64," + __import__("base64").b64encode(HTML.encode()).decode()
-        tools = build_browser_tools(s)
+        tools = build_browser_tools(s, restrict_goto=False)
 
         obs = await tools["goto"](url=url)
         assert "navigated" in obs.lower()

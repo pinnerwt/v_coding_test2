@@ -95,9 +95,20 @@ async def test_goto_allowed_when_url_in_sources():
 
 
 @pytest.mark.asyncio
-async def test_goto_unrestricted_by_default():
+async def test_goto_restricted_by_default_blocks_unknown_url():
     sess = _fake_session("https://anything.test/")
-    tools = build_browser_tools(sess)  # restrict_goto defaults to False
+    tools = build_browser_tools(
+        sess, allowlist_sources=lambda: ["goal mentions only https://example.com"]
+    )
+    obs = await tools["goto"]("https://anything.test/")
+    assert obs.startswith("ERROR: blocked goto")
+    sess.page.goto.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_goto_explicit_unrestricted_still_works():
+    sess = _fake_session("https://anything.test/")
+    tools = build_browser_tools(sess, restrict_goto=False)
     obs = await tools["goto"]("https://anything.test/")
     assert "navigated to" in obs
     sess.page.goto.assert_awaited_once()
@@ -124,7 +135,7 @@ async def test_goto_uses_domcontentloaded_with_20s_timeout():
     # fbf9c12d56974335a04965ddf0b3e62a — step 0 timed out, step 12 same
     # URL succeeded after 11 wasted steps).
     sess = _fake_session("https://example.test/")
-    tools = build_browser_tools(sess)
+    tools = build_browser_tools(sess, restrict_goto=False)
     await tools["goto"]("https://example.test/")
     sess.page.goto.assert_awaited_once_with(
         "https://example.test/", wait_until="domcontentloaded", timeout=20_000
@@ -137,6 +148,4 @@ async def test_back_uses_domcontentloaded_with_20s_timeout():
     sess.page.go_back = AsyncMock(return_value=None)
     tools = build_browser_tools(sess)
     await tools["back"]()
-    sess.page.go_back.assert_awaited_once_with(
-        wait_until="domcontentloaded", timeout=20_000
-    )
+    sess.page.go_back.assert_awaited_once_with(wait_until="domcontentloaded", timeout=20_000)
