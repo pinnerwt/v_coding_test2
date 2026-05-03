@@ -79,6 +79,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                 reg = ToolRegistry()
                 loop_holder: list = []
                 reason_log: list[str] = []
+                tape: list[dict] = []
                 visited_urls: deque[str] = deque(maxlen=64)
 
                 def allowlist_sources():
@@ -100,6 +101,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                 for t in build_meta_tool_list(
                     question_channel=qc,
                     reason_log=reason_log,
+                    tape=tape,
                 ):
                     reg.register(t)
 
@@ -128,6 +130,7 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                         diff_inject_max_lines=cfg.diff_inject_max_lines,
                         reason_log=reason_log,
                         on_visit=visited_urls.append,
+                        tape=tape,
                     )
                     loop_holder.append(loop)
                     return await loop.run(goal)

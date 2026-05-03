@@ -1536,3 +1536,77 @@ async def test_read_grep_partial_overlap_does_not_count_toward_streak(tmp_path):
     )
     await loop.run("scan XYZ markers across page")
     assert "read_grep" not in loop._hidden_tools
+
+
+# ---------------------------------------------------------------------------
+# Tape wired through to done() validation (Task 6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_done_validation_error_returned_as_obs_then_retry(tmp_path):
+    """First done(success) attempt cites fabricated evidence → rejected,
+    becomes ERROR obs; second attempt cites real evidence → succeeds."""
+    text = "the answer 9 is here"
+    browser = _StubBrowser(text)
+    transport = _mock_llm_calls(
+        [
+            ("read_grep", {"pattern": "answer", "reason": "look"}),
+            (
+                "done",
+                {
+                    "status": "success",
+                    "answer": "9",
+                    "evidence": "fictional substring not on page",
+                    "reason": "first try",
+                },
+            ),
+            (
+                "done",
+                {
+                    "status": "success",
+                    "answer": "9",
+                    "evidence": "the answer 9 is here",
+                    "reason": "fixed",
+                },
+            ),
+        ]
+    )
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    # Shared mutable tape — the loop appends to it and done() reads from it.
+    shared_tape: list[dict] = []
+    meta = build_meta_tools(question_channel=qc, tape=shared_tape)
+    reg.register(_build_real_read_grep_tool(browser))
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                    "answer": {"type": "string"},
+                    "evidence": {"type": "string"},
+                },
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=8,
+        tape=shared_tape,
+    )
+    result = await loop.run("find the answer in the page")
+    # Step 1 obs is the rejection; loop continues; step 2 succeeds.
+    assert "rejected" in loop.tape[1]["obs"]
+    assert result == {"status": "success", "answer": "9"}
