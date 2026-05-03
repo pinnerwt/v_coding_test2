@@ -126,3 +126,77 @@ async def test_plateau_interrupt_restricts_tools_at_threshold(tmp_path):
     assert restricted_turn is not None, f"no restricted turn seen: {seen_tool_sets}"
     assert restricted_turn == 4, f"expected restriction at turn 4, got {restricted_turn}"
     assert seen_tool_sets[restricted_turn] == {"reason", "done", "ask_user_question"}
+
+
+@pytest.mark.asyncio
+async def test_reason_clears_pending_and_does_not_touch_streak(tmp_path):
+    """After 4 stale obs the next turn is restricted; the LLM picks
+    `reason`; the pending flag clears and the streak does not change.
+    A subsequent stale obs should push streak to 5 (not 1, not reset)."""
+    actions_to_play = ["noopA", "noopA", "noopA", "noopA", "reason", "noopA", "noopA"]
+    idx = {"i": 0}
+
+    async def handler(request):
+        i = idx["i"]
+        idx["i"] += 1
+        # max_steps=8 triggers a final coerce_done LLM call (step_idx==7);
+        # return a benign sentinel that LLMClient will reject as
+        # ToolNameNotAllowed → coerce_done falls back to placeholder.
+        if i >= len(actions_to_play):
+            return _ok_response("noopA")
+        return _ok_response(actions_to_play[i])
+
+    llm = LLMClient("http://t/v1", "m", transport=httpx.MockTransport(handler))
+    reg = ToolRegistry()
+
+    async def noopA():
+        return "same"
+
+    async def reason(text: str = ""):
+        return "noted"
+
+    async def _done(status: str = "failed", answer: str = ""):
+        return ""
+
+    async def _ask(question: str = ""):
+        return ""
+
+    reg.register(Tool("noopA", "x", {"type": "object", "properties": {}}, noopA))
+    reg.register(
+        Tool(
+            "reason",
+            "x",
+            {"type": "object", "properties": {"text": {"type": "string"}}},
+            reason,
+        )
+    )
+    reg.register(Tool("done", "done", {"type": "object", "properties": {}}, _done))
+    reg.register(
+        Tool(
+            "ask_user_question",
+            "x",
+            {"type": "object", "properties": {"question": {"type": "string"}}},
+            _ask,
+        )
+    )
+
+    qc = QuestionChannel()
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        trace=trace,
+        browser=_Browser(),
+        question_channel=qc,
+        max_steps=8,
+    )
+    await loop.run("g")
+
+    # Tape after run: noopA, noopA, noopA, noopA, reason, noopA, noopA
+    actions = [s["action"] for s in loop.tape]
+    assert actions[:7] == ["noopA"] * 4 + ["reason", "noopA", "noopA"], actions
+    # After reason at index 4, pending flag must be False again.
+    # The streak after the final noopA tells us reason did NOT reset it
+    # (would be 1 if it had).
+    assert loop.no_progress_streak >= 5, loop.no_progress_streak

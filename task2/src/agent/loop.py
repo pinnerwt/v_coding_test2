@@ -594,10 +594,13 @@ class ReactLoop:
             new_fp = _obs_fingerprint(obs_str)
             earlier_fps = {_obs_fingerprint(s.get("obs", "")) for s in self.tape}
             self.tape.append({"thought": thought, "action": name, "args": args, "obs": obs_str})
-            if new_fp in earlier_fps:
-                self.no_progress_streak += 1
+            if name == "reason":
+                self._plateau_interrupt_pending = False
             else:
-                self.no_progress_streak = 0
+                if new_fp in earlier_fps:
+                    self.no_progress_streak += 1
+                else:
+                    self.no_progress_streak = 0
             self.trace.write(
                 {
                     "type": "step",
