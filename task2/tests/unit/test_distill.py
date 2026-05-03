@@ -180,3 +180,47 @@ async def test_distill_passes_prior_note_into_prompt(tmp_path):
     )
     body_text = json.dumps(captured["body"])
     assert "prior-fact-XYZ" in body_text
+
+
+@pytest.mark.asyncio
+async def test_distill_keys_by_root_url_not_full_url(tmp_path):
+    """Distillation produces site-level (root URL) knowledge: any session
+    that ended on https://a.test/<deep>/<path>?q=1 must write its bullets
+    to https://a.test/, and read the prior note from https://a.test/."""
+    notes = NotesStore(tmp_path / "n.db")
+    notes.set("https://a.test/", "prior-root-fact")
+    captured = {}
+
+    async def handler(request):
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "- new root fact"}}]})
+
+    llm = LLMClient(
+        base_url="http://test/v1",
+        model="m",
+        transport=httpx.MockTransport(handler),
+    )
+    await distill_page_knowledge(
+        llm=llm,
+        notes=notes,
+        url="https://a.test/some/deep/path?x=1#frag",
+        goal="g",
+        status="success",
+        answer="a",
+        tape=[],
+        reason_log=[],
+        trace=_RecordingTrace(),
+    )
+    body_text = json.dumps(captured["body"])
+    assert "prior-root-fact" in body_text, "prior note must be looked up at root URL"
+    assert "new root fact" in notes.get("https://a.test/")
+    assert notes.get("https://a.test/some/deep/path?x=1#frag") == ""
+
+
+@pytest.mark.asyncio
+async def test_distill_prompt_mentions_next_session(tmp_path):
+    """The system prompt must tell the model the bullets are durable
+    knowledge for the *next session*, not just for this run."""
+    from agent.distill import _PROMPT
+
+    assert "next session" in _PROMPT.lower()
