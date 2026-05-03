@@ -127,9 +127,11 @@ class BrowserSession:
                 role = (node.get("role") or {}).get("value", "") or ""
                 if role == "option":
                     cur = parent_of.get(node.get("nodeId"))
-                    while cur is not None and cur not in expanded_listbox_ids:
+                    for _ in range(64):
+                        if cur is None or cur in expanded_listbox_ids:
+                            break
                         cur = parent_of.get(cur)
-                    if cur is None:
+                    if cur is None or cur not in expanded_listbox_ids:
                         continue
                 elif role not in _INTERACTIVE_ROLES:
                     continue
