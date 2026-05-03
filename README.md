@@ -26,6 +26,8 @@ uv run python scripts/cost_report.py --all
 5. Wanted to try agentic RAG, chunked the webpage so that we can skip different read/read_grep calls. However, once we use this, we will lose the context on the order of the content. For example, we will not be able to answer "what is the third headline on BBC news". Gave up in the end.
 6. Do not handle captcha/anti bot/login walls for now. If we do want to bypass this, we would need a cleaner IP (instead of zeabur common cluster) and a X server in the docker (xvfb), and use a real browser with a MCP or mouse/keyboard control. Did it with my Openclaw but it took a lots of time and lots of tokens (see 7.).
 7. Vision: use the vision directly. This includes screenshots different webpage and scroll/click at different coordinates. This is for me the easiest way as a web agent: tool calls are clear and much less. However, the cons in this method is that it simply costs too many tokens. I think this is why Claude was shipped with this.
+8. Summary of different step, reducing prompt token usage with full context.
+9. Use Deepseek api saves my life after my decision to restart the project.
 
 ## Where AI helped me
 1. Implement the TDD/e2e tests
