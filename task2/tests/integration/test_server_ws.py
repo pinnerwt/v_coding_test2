@@ -49,7 +49,9 @@ async def test_session_started_persisted_first(tmp_path, monkeypatch):
         r = await ac.post("/api/run_sync", json={"goal": "buy soap"})
         assert r.status_code == 200
 
-    traces = sorted((tmp_path / "traces").glob("*.jsonl"))
+    traces = sorted(
+        p for p in (tmp_path / "traces").glob("*.jsonl") if not p.name.endswith(".llm.jsonl")
+    )
     assert len(traces) == 1
     first_line = traces[0].read_text().splitlines()[0]
     ev = json.loads(first_line)

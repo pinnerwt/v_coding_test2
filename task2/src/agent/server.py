@@ -19,6 +19,7 @@ from fastapi.templating import Jinja2Templates
 from agent.browser_session import BrowserSession
 from agent.config import Config
 from agent.llm import LLMClient
+from agent.llm_trace import LLMTraceWriter, LoggingLLMClient
 from agent.loop import ReactLoop
 from agent.notes_store import NotesStore
 from agent.tools.browser import build_browser_tool_list
@@ -70,6 +71,8 @@ def build_app(*, cfg: Config, data_dir: Path, llm_transport: Any = None) -> Fast
                     api_key=cfg.agent_api_key,
                     transport=llm_transport,
                 )
+                llm_trace = LLMTraceWriter(data_dir / "traces" / f"{session_id}.llm.jsonl")
+                agent_llm = LoggingLLMClient(inner=agent_llm, writer=llm_trace, trace=trace)
                 reg = ToolRegistry()
                 loop_holder: list = []
                 reason_log: list[str] = []

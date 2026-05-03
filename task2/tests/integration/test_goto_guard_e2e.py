@@ -79,7 +79,7 @@ async def test_goto_blocked_when_url_not_in_goal_or_tape(tmp_path, monkeypatch):
         assert r.status_code == 200
 
     # Trace must contain a step whose obs starts with the block marker
-    traces = list((tmp_path / "traces").glob("*.jsonl"))
+    traces = [p for p in (tmp_path / "traces").glob("*.jsonl") if not p.name.endswith(".llm.jsonl")]
     assert traces, "no trace written"
     blocked = False
     for line in traces[0].read_text().splitlines():
