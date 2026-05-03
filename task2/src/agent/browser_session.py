@@ -130,6 +130,22 @@ class BrowserSession:
                             raw = (href.get("result") or {}).get("value") or ""
                             if raw:
                                 entry["href"] = raw
+                    if role in ("textbox", "searchbox"):
+                        with contextlib.suppress(Exception):
+                            res = await cdp.send(
+                                "Runtime.callFunctionOn",
+                                {
+                                    "functionDeclaration": (
+                                        "function(){ return"
+                                        " this.getAttribute('placeholder') || ''; }"
+                                    ),
+                                    "objectId": object_id,
+                                    "returnByValue": True,
+                                },
+                            )
+                            raw = (res.get("result") or {}).get("value") or ""
+                            if raw:
+                                entry["placeholder"] = raw
                     flat.append(entry)
                     self._element_map[eid] = self.page.locator(f'[data-agent-eid="{eid}"]')
                     next_id += 1

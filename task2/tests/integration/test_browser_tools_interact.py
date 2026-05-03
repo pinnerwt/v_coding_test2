@@ -242,3 +242,37 @@ async def test_snapshot_link_exposes_href():
         assert "NoHref" not in links, links
     finally:
         await s.close()
+
+
+HTML_PLACEHOLDERS = """<!doctype html><html><body>
+<input type=text placeholder="Search models, datasets, users…">
+<input type=text>
+<input type=search placeholder="ignored-by-search-role">
+</body></html>"""
+
+
+@pytest.mark.asyncio
+async def test_snapshot_textbox_placeholder():
+    """Textbox/searchbox entries must expose `placeholder` so the agent
+    can pick the right input on the first try (HF homepage has 3+ text
+    inputs; without placeholders the agent has to guess by id ordering)."""
+    s = BrowserSession()
+    await s.start()
+    try:
+        url = (
+            "data:text/html;charset=utf-8;base64,"
+            + base64.b64encode(HTML_PLACEHOLDERS.encode()).decode()
+        )
+        tools = build_browser_tools(s, restrict_goto=False)
+        await tools["goto"](url=url)
+        snap = json.loads(await tools["list_interactive"]())
+        textboxes = [e for e in snap if e["role"] in ("textbox", "searchbox")]
+        with_ph = [e for e in textboxes if "placeholder" in e]
+        assert any(
+            e["placeholder"] == "Search models, datasets, users…" for e in with_ph
+        ), textboxes
+        # An input with no placeholder attribute must not have the field.
+        bare = [e for e in textboxes if "placeholder" not in e]
+        assert bare, "expected at least one textbox without placeholder"
+    finally:
+        await s.close()
