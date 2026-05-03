@@ -200,3 +200,69 @@ async def test_reason_clears_pending_and_does_not_touch_streak(tmp_path):
     # The streak after the final noopA tells us reason did NOT reset it
     # (would be 1 if it had).
     assert loop.no_progress_streak >= 5, loop.no_progress_streak
+
+
+@pytest.mark.asyncio
+async def test_plateau_interrupt_message_appears_in_system_prompt(tmp_path):
+    """When the plateau triggers, the system prompt sent to the LLM on
+    that turn must include the one-shot interrupt instruction."""
+    seen_systems: list[str] = []
+
+    async def handler(request):
+        body = json.loads(request.content)
+        seen_systems.append(body["messages"][0]["content"])
+        return _ok_response("noopA")
+
+    llm = LLMClient("http://t/v1", "m", transport=httpx.MockTransport(handler))
+    reg = ToolRegistry()
+
+    async def noopA():
+        return "same"
+
+    async def reason(text: str = ""):
+        return "noted"
+
+    async def _done(status: str = "failed", answer: str = ""):
+        return ""
+
+    async def _ask(question: str = ""):
+        return ""
+
+    reg.register(Tool("noopA", "x", {"type": "object", "properties": {}}, noopA))
+    reg.register(
+        Tool(
+            "reason",
+            "x",
+            {"type": "object", "properties": {"text": {"type": "string"}}},
+            reason,
+        )
+    )
+    reg.register(Tool("done", "done", {"type": "object", "properties": {}}, _done))
+    reg.register(
+        Tool(
+            "ask_user_question",
+            "x",
+            {"type": "object", "properties": {"question": {"type": "string"}}},
+            _ask,
+        )
+    )
+
+    qc = QuestionChannel()
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        trace=trace,
+        browser=_Browser(),
+        question_channel=qc,
+        max_steps=8,
+    )
+    await loop.run("g")
+
+    # Turn at index 4 (after 4 stale obs) must carry the interrupt text.
+    assert "no new information" in seen_systems[4].lower(), seen_systems[4]
+    assert "reason" in seen_systems[4].lower()
+    # Earlier turns must NOT carry it.
+    for i in range(4):
+        assert "no new information" not in seen_systems[i].lower(), (i, seen_systems[i])

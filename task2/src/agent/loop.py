@@ -41,6 +41,13 @@ _REPLAN_HINT = (
     "navigate elsewhere, call reason() to record the failure, or ask_user_question."
 )
 
+_PLATEAU_INTERRUPT_HINT = (
+    "INTERRUPT: You've taken several actions with no new information. "
+    "Your next action MUST be `reason` (write what you've tried, what's "
+    "blocking, and what to try next), or `done(failed, ...)` with the "
+    "best partial answer, or `ask_user_question` if a human can break the tie."
+)
+
 # Force a done(failed) when the agent produces this many consecutive
 # observations whose fingerprints were already seen earlier in the tape.
 # Catches arbitrary-length cycles that the hint state machine misses
@@ -298,6 +305,9 @@ class ReactLoop:
                 page_diff=diff_block,
                 wall_banner=wall_banner,
                 reason_log=self.reason_log,
+                plateau_interrupt=(
+                    _PLATEAU_INTERRUPT_HINT if self._plateau_interrupt_pending else None
+                ),
             )
             if self.send_transient is not None:
                 await self.send_transient({"type": "llm_call_start"})
