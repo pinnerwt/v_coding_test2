@@ -138,8 +138,13 @@ def build_browser_tools(
     async def click(id: int) -> str:
         try:
             loc = session.locator(id)
+            if await loc.count() == 0:
+                return (
+                    f"ERROR: id={id} no longer in DOM. Call list_interactive "
+                    "to refresh — eids are reassigned each snapshot."
+                )
             try:
-                tag = await loc.evaluate("el => el.tagName")
+                tag = await loc.evaluate("el => el.tagName", timeout=3000)
             except Exception:
                 tag = ""
             if tag == "SELECT":
@@ -151,7 +156,7 @@ def build_browser_tools(
             try:
                 await loc.click(timeout=3000)
             except Exception:
-                await loc.evaluate("el => el.click()")
+                await loc.evaluate("el => el.click()", timeout=3000)
             return f"clicked id={id}"
         except Exception as e:
             return f"ERROR: {e}"
@@ -159,6 +164,11 @@ def build_browser_tools(
     async def type_(id: int, text: str, submit: bool = False) -> str:
         try:
             loc = session.locator(id)
+            if await loc.count() == 0:
+                return (
+                    f"ERROR: id={id} no longer in DOM. Call list_interactive "
+                    "to refresh — eids are reassigned each snapshot."
+                )
             await loc.fill(text)
             if submit:
                 await loc.press("Enter")
@@ -169,6 +179,11 @@ def build_browser_tools(
     async def select_option(id: int, value: str) -> str:
         try:
             loc = session.locator(id)
+            if await loc.count() == 0:
+                return (
+                    f"ERROR: id={id} no longer in DOM. Call list_interactive "
+                    "to refresh — eids are reassigned each snapshot."
+                )
             await loc.select_option(value, timeout=5_000)
             return f"selected {value!r} on id={id}"
         except Exception as e:

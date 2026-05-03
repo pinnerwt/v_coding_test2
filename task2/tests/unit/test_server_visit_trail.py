@@ -190,10 +190,13 @@ async def test_server_threads_visit_trail_into_allowlist(tmp_path, monkeypatch):
             page = self.page
 
             class Loc:
+                async def count(self):
+                    return 1
+
                 async def click(self, **kw):
                     page.url = discovered
 
-                async def evaluate(self, expr):
+                async def evaluate(self, expr, **kw):
                     return "A"
 
                 async def fill(self, *a, **kw):
