@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from agent.llm import LLMClient
-from agent.loop import ReactLoop
+from agent.loop import NO_PROGRESS_GIVEUP, ReactLoop
 from agent.tools.meta import QuestionChannel
 from agent.tools.registry import Tool, ToolRegistry
 from agent.trace import TraceWriter
@@ -160,22 +160,22 @@ async def test_no_progress_streak_forces_done_failed(tmp_path):
     )
     result = await loop.run("g")
     assert result["status"] == "failed"
-    # Must have given up well before max_steps. With streak threshold 12
-    # and one warm-up step, expect ≤16 LLM calls (some slack for the
-    # interplay with the existing hint state machine).
-    assert call_n["i"] <= 16, (
+    # Must have given up well before max_steps. NO_PROGRESS_GIVEUP=9 is the
+    # streak threshold; the +7 slack covers the warm-up step plus interplay
+    # with the hint state machine.
+    assert call_n["i"] <= NO_PROGRESS_GIVEUP + 7, (
         f"loop called LLM {call_n['i']} times before giving up — streak force-done did not fire"
     )
     assert "stuck" in result["answer"].lower(), result["answer"]
 
 
-def test_no_progress_giveup_is_9():
+def test_no_progress_constants_align_with_k_recent():
+    """The no-progress trigger fires one step past the visible recent
+    context window: NOVELTY_WINDOW == K_RECENT and NO_PROGRESS_GIVEUP ==
+    K_RECENT + 1. If you change one, you almost certainly want to change
+    the others — this test forces the conversation."""
+    from agent.context import K_RECENT, NOVELTY_WINDOW
     from agent.loop import NO_PROGRESS_GIVEUP
 
-    assert NO_PROGRESS_GIVEUP == 9
-
-
-def test_novelty_window_is_8():
-    from agent.context import NOVELTY_WINDOW
-
-    assert NOVELTY_WINDOW == 8
+    assert NOVELTY_WINDOW == K_RECENT
+    assert NO_PROGRESS_GIVEUP == K_RECENT + 1
