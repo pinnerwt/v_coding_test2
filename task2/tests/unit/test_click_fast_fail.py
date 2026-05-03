@@ -191,3 +191,25 @@ async def test_click_on_non_select_with_value_flags_stale_eid():
     assert "list_interactive" in obs
     assert loc.click_calls == 0
     assert loc.select_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_select_option_not_in_tool_registry():
+    """LLM tool surface should expose only `click`; no `select_option`."""
+    from agent.tools.browser import build_browser_tool_list, build_browser_tools
+
+    sess = _Sess({})
+    fns = build_browser_tools(sess, restrict_goto=False)
+    assert "select_option" not in fns
+
+    tool_list = build_browser_tool_list(sess, restrict_goto=False)
+    names = [t.name for t in tool_list]
+    assert "select_option" not in names
+    assert "click" in names
+
+    click_tool = next(t for t in tool_list if t.name == "click")
+    props = click_tool.parameters["properties"]
+    assert "value" in props
+    assert props["value"]["type"] == "string"
+    # value must NOT be required — it's only used for <select>
+    assert "value" not in click_tool.parameters.get("required", [])
