@@ -21,8 +21,8 @@ def test_system_prompt_mentions_action_history() -> None:
 
 
 def test_system_prompt_mentions_recent_observations() -> None:
-    assert "Recent observations" in _SYSTEM, (
-        "prompt must point the LLM at the `## Recent observations (last 3)` window"
+    assert "Recent observations (last 5)" in _SYSTEM, (
+        "prompt must point the LLM at the `## Recent observations (last 5)` window"
     )
 
 

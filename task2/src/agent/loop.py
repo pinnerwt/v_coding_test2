@@ -39,11 +39,20 @@ per prior step (`step N | url | action_call | reason`). Re-read it each turn:
 - If you have issued the same call 2–3 times with no progress, the strategy is
   not working — change approach (different page, different element, commit done).
 
-## Use `## Recent observations (last 3)`
-The user message includes a `## Recent observations (last 3)` section with the
-raw text of the 3 most recent observations. Older observations are NOT preserved
+## Use `## Recent observations (last 5)`
+The user message includes a `## Recent observations (last 5)` section with the
+raw text of the 5 most recent observations. Older observations are NOT preserved
 verbatim — only your `reason` strings are. Write reasons that capture what you
 saw, because future turns will not see the raw obs again.
+
+## Forced reason checkpoint every 5 steps
+Every 5th step (step 5, 10, 15, …) the loop locks the tool choice to `reason()`.
+On those turns you MUST call `reason(text=..., reason=...)` with a 3-part
+consolidation: (a) what concrete facts the last 5 obs established — including
+any *secondary* findings that would make a good-enough fallback answer if the
+primary goal stays unreachable, (b) what's still missing, (c) the next 1-3
+actions you intend to try. The reason text is your durable scratchpad — write
+it for your future self.
 
 ## Grounding
 Element IDs come from `list_interactive` — never invent CSS selectors or guess
@@ -305,11 +314,29 @@ class ReactLoop:
                 reason_log=self.reason_log,
                 interactive_elements=interactive_elements,
             )
+            if step_idx > 0 and step_idx % 5 == 0:
+                tool_choice: Any = {"type": "function", "function": {"name": "reason"}}
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Checkpoint (step {step_idx}): you have taken 5 steps "
+                            "since the last forced reason. Call reason() now to "
+                            "consolidate — (a) facts the last 5 obs established, "
+                            "including any secondary findings that would make a "
+                            "good-enough fallback answer if the primary goal stays "
+                            "unreachable, (b) what's still missing, (c) the next "
+                            "1-3 actions you'll try."
+                        ),
+                    }
+                )
+            else:
+                tool_choice = "required"
             if self.send_transient is not None:
                 await self.send_transient({"type": "llm_call_start"})
             try:
                 msg, usage = await self.llm.chat(
-                    messages, tools=tools, tool_choice="required", reasoning=False
+                    messages, tools=tools, tool_choice=tool_choice, reasoning=False
                 )
             except ToolNameNotAllowed as e:
                 obs = (

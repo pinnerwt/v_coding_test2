@@ -1628,3 +1628,126 @@ async def test_done_validation_error_returned_as_obs_then_retry(tmp_path):
     # Step 1 obs is the rejection; loop continues; step 2 succeeds.
     assert "rejected" in loop.tape[1]["obs"]
     assert result == {"status": "success", "answer": "9"}
+
+
+@pytest.mark.asyncio
+async def test_loop_forces_reason_call_every_5_steps(tmp_path):
+    """Every Nth step (step_idx in {5, 10, 15, …}) the loop must lock
+    tool_choice to reason() so the agent stops to consolidate. Steps in
+    between use the regular `required` tool_choice."""
+    text = "A" * 1600
+    browser = _StubBrowser(text)
+
+    captured_tool_choice: list[Any] = []
+    call_count = {"n": 0}
+
+    async def handler(request):
+        body = json.loads(request.content.decode())
+        captured_tool_choice.append(body.get("tool_choice"))
+        call_count["n"] += 1
+        n = call_count["n"]
+        # 1-indexed: calls 1..5 are read, call 6 (step_idx 5) is forced reason,
+        # call 7 (step_idx 6) is the final done.
+        if n <= 5:
+            tc_name, tc_args = "read", {"offset": (n - 1) * 1600, "reason": f"r{n}"}
+        elif n == 6:
+            tc_name, tc_args = (
+                "reason",
+                {
+                    "text": "consolidating: nothing useful so far",
+                    "reason": "step 5 checkpoint",
+                },
+            )
+        else:
+            tc_name, tc_args = (
+                "done",
+                {
+                    "status": "failed",
+                    "answer": "no answer found",
+                    "reason": "exhausted reads",
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": f"c{n}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc_name,
+                                        "arguments": json.dumps(tc_args),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    llm = LLMClient("http://t/v1", "m", transport=transport)
+    reg = ToolRegistry()
+    qc = QuestionChannel()
+    reason_log: list[str] = []
+    meta = build_meta_tools(question_channel=qc, reason_log=reason_log)
+    reg.register(_build_read_tool(browser))
+    reg.register(
+        Tool(
+            "reason",
+            "reason",
+            {
+                "type": "object",
+                "properties": {"text": {"type": "string"}, "reason": {"type": "string"}},
+                "required": ["text", "reason"],
+            },
+            meta["reason"],
+        )
+    )
+    reg.register(
+        Tool(
+            "done",
+            "done",
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}, "answer": {"type": "string"}},
+                "required": ["status", "answer"],
+            },
+            meta["done"],
+        )
+    )
+    trace = TraceWriter(tmp_path / "t.jsonl")
+    loop = ReactLoop(
+        llm=llm,
+        registry=reg,
+        notes=None,
+        trace=trace,
+        browser=browser,
+        question_channel=qc,
+        max_steps=10,
+        reason_log=reason_log,
+    )
+    await loop.run("anything")
+
+    # We expect at least 7 calls (steps 0..6 inclusive, no forced max_steps coercion).
+    assert len(captured_tool_choice) >= 7, captured_tool_choice
+    # Steps 0..4 → "required"
+    for i in range(5):
+        assert captured_tool_choice[i] == "required", (
+            f"call {i} (step {i}) should be 'required', got {captured_tool_choice[i]!r}"
+        )
+    # Step 5 → forced reason
+    assert captured_tool_choice[5] == {
+        "type": "function",
+        "function": {"name": "reason"},
+    }, f"call 5 (step 5) should force reason, got {captured_tool_choice[5]!r}"
+    # Step 6 → back to "required"
+    assert captured_tool_choice[6] == "required", (
+        f"call 6 (step 6) should be 'required', got {captured_tool_choice[6]!r}"
+    )

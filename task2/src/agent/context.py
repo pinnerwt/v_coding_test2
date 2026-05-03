@@ -90,10 +90,10 @@ def build_messages(
         user_parts.append("")
         user_parts.append(wall_banner)
 
-    recent_obs = [step.get("obs", "") for step in tape[-3:]]
+    recent_obs = [step.get("obs", "") for step in tape[-5:]]
     if recent_obs:
         user_parts.append("")
-        user_parts.append("## Recent observations (last 3)")
+        user_parts.append("## Recent observations (last 5)")
         user_parts.append("---")
         for obs in recent_obs:
             user_parts.append(obs)
