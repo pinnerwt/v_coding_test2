@@ -357,10 +357,14 @@ class ReactLoop:
 
             last_aa = self._last_action_args()
             new_aa = _action_key(name, args)
-            # When `reason` is registered, the plateau interrupt subsumes the
-            # ask_user_question redirect: let the streak keep climbing so the
-            # plateau gate can fire one turn earlier instead of bouncing the
-            # action through ask_user_question (which resets the streak).
+            # `reason` in registry signals the plateau-interrupt mechanism is
+            # wired. In that mode, plateau supersedes this hinted→ask redirect:
+            # plateau offers ask_user_question as one of three forced choices
+            # (alongside reason/done), so the user-escape path isn't lost —
+            # just rerouted. The registry check is a deliberate "new mechanism
+            # replaces old" gate, not an accidental coupling; bouncing the
+            # action through ask_user_question here would reset the streak and
+            # prevent the plateau gate from arming on the same turn.
             _has_reason = "reason" in self.registry.names()
             if state == "hinted":
                 if (
