@@ -107,35 +107,46 @@ mapping was a guess.
 If a result has `sid` but the trace file does not exist, that's a P0
 finding ("missing trace for case X, sid Y").
 
-### Step 4 — Aggregate metrics
+### Step 4 — Aggregate metrics & append history row
 
-For each `(case_id, sid)` pair:
+`bench_webvoyager.py` calls `scripts/metrics_row.py` itself at the
+end of a successful sweep — the row is already appended by the time
+the bench process exits, with these fields:
 
-- **latency_ms** — from the bench JSON entry's `elapsed_ms`.
-- **token usage** — sum across all records in
+- **latency_ms** — `sum`/`avg`/`p50`/`p95` over per-case `elapsed_ms`.
+  `sum` is "total wall time added task by task"; under concurrency > 1
+  it is intentionally NOT the bench script's wall-clock runtime, which
+  would under-value cumulative work and break comparability across
+  concurrency settings.
+- **token usage** — summed across each case's
   `data/traces/<sid>.llm.jsonl`:
   - `input_cached`  = Σ `usage.prompt_cache_hit_tokens`
   - `input_uncached` = Σ `usage.prompt_cache_miss_tokens`
-  - `input_total` = Σ `usage.prompt_tokens` (sanity: should equal
-    cached + uncached when both fields are present)
+  - `input_total` = Σ `usage.prompt_tokens`
   - `output` = Σ `usage.completion_tokens`
   - `calls` = number of records
+- **success_rate** = n_success / n_total
 
-Aggregate totals across all 13 cases. Also compute:
+Confirm the row landed by reading the last line of
+`task2/data/bench/metrics_history.jsonl` after the bench exits — that
+is the row you'll diff against the previous run in Step 6.
 
-- `success_rate` = n_success / n_total
-- `latency.avg_ms` = mean of per-case `elapsed_ms`
-- `latency.p50_ms`, `latency.p95_ms` — percentiles over the 13 cases
+If the bench process crashed before the row was appended, you can
+back-fill from the bench JSON manually:
 
-Use a one-shot Python heredoc; do not write a permanent script.
-Reuse `scripts/cost_report.py`'s sidecar parser only as reference —
-don't import it.
+```bash
+cd task2 && uv run python scripts/metrics_row.py \
+  data/bench/<bench_file>.json
+```
 
-### Step 5 — Append to metrics history
+Do not edit `metrics_history.jsonl` by hand. Do not use a heredoc to
+re-aggregate — the script is the source of truth, schema-stable on
+purpose for the downstream chart.
 
-File: `task2/data/bench/metrics_history.jsonl`.
+### Step 5 — History row schema (reference)
 
-Append **one** line — a single JSON object — with this schema:
+The row appended to `task2/data/bench/metrics_history.jsonl` has this
+shape:
 
 ```json
 {
@@ -161,23 +172,42 @@ Append **one** line — a single JSON object — with this schema:
 ```
 
 This file is the contract with the downstream charting script.
-Schema-stability matters more than prettiness. Do NOT pretty-print
-(one line per run keeps `tail -n 30` cheap). Do NOT rewrite history.
-Append-only.
+Schema-stability matters more than prettiness. One line per run keeps
+`tail -n 30` cheap. Append-only — never rewrite a prior row.
 
-### Step 6 — Compute deltas vs previous row
+### Step 6 — Read deltas vs previous row
 
-For each metric in the new row that also exists in the previous row,
-compute absolute and percent delta:
+`bench_webvoyager.py` already computed deltas after appending the
+row. Read them from `task2/data/bench/last_deltas.json`:
 
-- `success_rate`
-- `latency_ms.avg`, `latency_ms.p95`
-- `tokens.input_cached`, `tokens.input_uncached`, `tokens.output`,
-  `tokens.calls`
+```json
+{
+  "ts": "<this run's ts>",
+  "bench_file": "webvoyager_<this>.json",
+  "prev_bench_file": "webvoyager_<previous>.json or null",
+  "deltas": {
+    "success_rate":         {"new": 0.8462, "prev": 0.7692, "abs_delta": 0.077, "pct_delta": 10.0},
+    "latency_ms.avg":       {"new": 102666, "prev": 110000, "abs_delta": -7334, "pct_delta": -6.67},
+    "latency_ms.p95":       {...},
+    "tokens.input_cached":  {...},
+    "tokens.input_uncached":{...},
+    "tokens.output":        {...},
+    "tokens.calls":         {...}
+  }
+}
+```
 
-Format: `tokens.output: 6,789 (Δ +812, +13.6%)`. Round percent to one
-decimal. Use `(Δ n/a)` when the previous row lacks the field. Use
-`Δ n/a (first run)` for every field if there is no previous row.
+Semantics:
+- `prev=null` (first run, or that field missing on the prior row) →
+  `abs_delta` and `pct_delta` are also null. Render as `Δ n/a (first
+  run)`.
+- `prev=0` → `pct_delta=null` to avoid div-by-zero, but `abs_delta`
+  is well-defined. Render as `(Δ +N)` without a percent.
+- Everything else → render as `(Δ ±N, ±P.P%)`.
+
+Do NOT recompute deltas in a heredoc. The script is the source of
+truth so the observations.md table stays consistent with whatever
+`metrics_history.jsonl` actually contains.
 
 ### Step 7 — Per-fail analysis
 
