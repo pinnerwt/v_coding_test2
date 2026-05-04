@@ -16,8 +16,8 @@ import bisect
 import re
 from dataclasses import dataclass
 
-from .render import Rendered
-from .toc import TOCEntry, TOCRegion
+from .render import Rendered, render_html
+from .toc import TOCEntry, TOCRegion, find_toc_region
 
 
 @dataclass
@@ -25,6 +25,15 @@ class BodyLocation:
     entry: TOCEntry
     body_text_start: int
     body_source_start: int
+
+
+@dataclass
+class Slice:
+    item_title: str
+    content_text: str
+    char_range: tuple[int, int]
+    text_range: tuple[int, int]
+    entry: TOCEntry
 
 
 _ID_ATTR_RE = re.compile(rb"""\b(?:id|name)\s*=\s*['"]([^'"]+)['"]""", re.IGNORECASE)
@@ -132,3 +141,67 @@ def resolve_entries_to_body(
             )
         )
     return locations
+
+
+_ITEM_TITLE_PREFIX_RE = re.compile(r"^\s*Item\s+\d+[A-Z]?\.?\s*[:\-–—]?\s*", re.IGNORECASE)
+_ITEM_HEAD_RE = re.compile(r"^\s*Item\s+\d+[A-Z]?\b", re.IGNORECASE)
+
+
+def _strip_item_prefix(text: str) -> str:
+    return _ITEM_TITLE_PREFIX_RE.sub("", text).strip()
+
+
+def _is_item_entry(entry: TOCEntry) -> bool:
+    return bool(_ITEM_HEAD_RE.match(entry.text))
+
+
+def segment(html: bytes) -> list[Slice]:
+    """End-to-end pipeline: render → find TOC → resolve → slice into Items.
+
+    Returns a list of :class:`Slice` ordered by document position. Each slice
+    spans from one Item heading to the next; the final slice runs to the end
+    of the rendered text. Part-headers and non-Item TOC entries are filtered
+    out — only Items get slices.
+    """
+    rendered = render_html(html)
+    region = find_toc_region(rendered, html)
+    if region is None:
+        return []
+    body_locs = resolve_entries_to_body(rendered, region, html)
+
+    item_locs = [b for b in body_locs if _is_item_entry(b.entry)]
+    item_locs.sort(key=lambda b: b.body_text_start)
+    # Drop duplicate text positions (some filings re-use targets across rows).
+    deduped: list[BodyLocation] = []
+    for b in item_locs:
+        if deduped and b.body_text_start == deduped[-1].body_text_start:
+            continue
+        deduped.append(b)
+
+    slices: list[Slice] = []
+    text = rendered.text
+    src_offsets = rendered.source_offset
+    for i, loc in enumerate(deduped):
+        text_start = loc.body_text_start
+        text_end = deduped[i + 1].body_text_start if i + 1 < len(deduped) else len(text)
+        if text_end <= text_start:
+            continue
+        content = text[text_start:text_end]
+        if not content.strip():
+            continue
+        char_start = src_offsets[text_start] if text_start < len(src_offsets) else 0
+        # The end byte is one past the last char's source byte; clamp to len.
+        last_char_idx = text_end - 1
+        char_end = src_offsets[last_char_idx] + 1 if last_char_idx < len(src_offsets) else len(html)
+        if char_end <= char_start:
+            continue
+        slices.append(
+            Slice(
+                item_title=_strip_item_prefix(loc.entry.text),
+                content_text=content,
+                char_range=(char_start, char_end),
+                text_range=(text_start, text_end),
+                entry=loc.entry,
+            )
+        )
+    return slices

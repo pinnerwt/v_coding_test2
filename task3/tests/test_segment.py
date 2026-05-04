@@ -3,7 +3,7 @@ import pathlib
 import pytest
 
 from sec_toolbox.render import render_html
-from sec_toolbox.segment import resolve_entries_to_body
+from sec_toolbox.segment import resolve_entries_to_body, segment
 from sec_toolbox.toc import find_toc_region
 
 FIXTURES = pathlib.Path(__file__).parent.parent / "data/raw/archive"
@@ -78,3 +78,37 @@ def test_prominence_fallback_finds_target_when_anchor_missing():
     chunk = rendered.chunk_at(item1.body_text_start)
     assert chunk is not None
     assert chunk.layout.is_bold or chunk.layout.font_size_pt > rendered.median_font_size
+
+
+@pytest.mark.skipif(not APPLE.exists(), reason="Apple fixture not cached")
+def test_segment_apple_produces_slices():
+    html = APPLE.read_bytes()
+    slices = segment(html)
+    titles = [s.item_title for s in slices]
+    assert "Business" in titles
+    assert "Risk Factors" in titles
+    for s in slices:
+        assert s.content_text
+        assert s.char_range[1] > s.char_range[0]
+    for a, b in zip(slices, slices[1:], strict=False):
+        assert a.char_range[1] <= b.char_range[0]
+
+
+@pytest.mark.skipif(not APPLE.exists(), reason="Apple fixture not cached")
+def test_segment_apple_covers_expected_items():
+    html = APPLE.read_bytes()
+    slices = segment(html)
+    titles = [s.item_title for s in slices]
+    for expected in ["Business", "Risk Factors", "Cybersecurity", "Properties"]:
+        assert expected in titles, f"missing slice for {expected}"
+
+
+@pytest.mark.skipif(not IBM.exists(), reason="IBM fixture not cached")
+def test_segment_ibm_produces_slices():
+    html = IBM.read_bytes()
+    slices = segment(html)
+    titles = [s.item_title for s in slices]
+    assert "Business" in titles
+    assert "Risk Factors" in titles
+    for a, b in zip(slices, slices[1:], strict=False):
+        assert a.char_range[1] <= b.char_range[0]
