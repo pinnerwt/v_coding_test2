@@ -1,4 +1,14 @@
+import pathlib
+
+import pytest
+
 from sec_toolbox.render import render_html
+
+FIXTURES = pathlib.Path(__file__).parent.parent / "data/raw/archive"
+
+APPLE = FIXTURES / "320193/000032019323000106/aapl-20230930.htm"
+IBM = FIXTURES / "51143/000155837020001334/ibm-20191231x10k2af531.htm"
+EXXON = FIXTURES / "34088/000003408826000045/xom-20251231.htm"
 
 
 def test_render_returns_text_and_offset_map():
@@ -47,3 +57,37 @@ def test_render_layout_capitalization_ratio():
     body = next(c for c in rendered.chunks if "mixed" in c.text)
     assert caps.layout.capitalization_ratio > 0.9
     assert body.layout.capitalization_ratio < 0.1
+
+
+@pytest.mark.skipif(not APPLE.exists(), reason="Apple fixture not cached")
+def test_render_apple_fixture():
+    html = APPLE.read_bytes()
+    r = render_html(html)
+    assert len(r.text) > 100_000
+    assert any("Item 1." in c.text and "Business" in c.text for c in r.chunks)
+
+
+@pytest.mark.skipif(not IBM.exists(), reason="IBM fixture not cached")
+def test_render_ibm_fixture():
+    html = IBM.read_bytes()
+    r = render_html(html)
+    assert len(r.text) > 100_000
+    # IBM 2019 uses "ITEM 1." in caps
+    assert any(
+        "ITEM 1" in c.text.upper() and "BUSINESS" in c.text.upper() for c in r.chunks
+    )
+
+
+@pytest.mark.skipif(not EXXON.exists(), reason="Exxon fixture not cached")
+def test_render_exxon_fixture():
+    html = EXXON.read_bytes()
+    r = render_html(html)
+    assert len(r.text) > 100_000
+    # Exxon's inline-XBRL TOC puts each label in its own table cell, so
+    # "Item 1." and "Business" land in adjacent chunks rather than merged.
+    item_chunks = [
+        i for i, c in enumerate(r.chunks) if c.text.strip().startswith("Item 1.")
+    ]
+    assert item_chunks, "expected an 'Item 1.' chunk"
+    follow = r.chunks[item_chunks[0] + 1].text
+    assert "Business" in follow
