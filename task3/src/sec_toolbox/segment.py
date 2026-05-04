@@ -4,6 +4,10 @@ Given a rendered 10-K and its TOC region, look up each TOC entry's anchor
 target in the source HTML, find where that target is *defined* (i.e. the
 element carrying ``id="..."`` or ``name="..."``), and translate that source
 byte position back into a rendered-text offset.
+
+Older filings without internal anchors fall back to a visual-prominence
+search: scan rendered chunks past the TOC region and pick the first
+prominently-formatted chunk whose normalized text matches the entry title.
 """
 
 from __future__ import annotations
@@ -54,36 +58,77 @@ def _source_byte_to_text_offset(source_offsets: list[int], byte_pos: int) -> int
     return bisect.bisect_left(source_offsets, byte_pos)
 
 
+_WS_RE = re.compile(r"\s+")
+
+
+def _normalize(text: str) -> str:
+    return _WS_RE.sub(" ", text.replace("\xa0", " ").lower()).strip()
+
+
+def resolve_via_prominence(rendered: Rendered, region: TOCRegion, entry: TOCEntry) -> int | None:
+    """Find a body location for ``entry`` by scanning prominent chunks past
+    the TOC region and matching against the entry's normalized text.
+
+    Returns the rendered-text offset of the first prominent chunk whose
+    normalized text contains the entry title (or vice-versa), or ``None`` if
+    no such chunk is found.
+    """
+    key = _normalize(entry.text)
+    if not key:
+        return None
+    median_fs = rendered.median_font_size
+    for c in rendered.chunks:
+        if c.text_start <= region.text_end:
+            continue
+        if not (c.layout.is_bold or c.layout.font_size_pt > median_fs):
+            continue
+        cand = _normalize(c.text)
+        if not cand:
+            continue
+        if key in cand or (len(cand) >= 6 and cand in key):
+            return c.text_start
+    return None
+
+
 def resolve_entries_to_body(
     rendered: Rendered, region: TOCRegion, html: bytes
 ) -> list[BodyLocation]:
-    """Resolve each TOC entry to a body text location via its anchor target.
+    """Resolve each TOC entry to a body text location.
 
-    Entries without an anchor target, or whose target cannot be found in the
-    HTML, are skipped here. Older filings without anchors are handled by the
-    visual-prominence fallback in :func:`resolve_via_prominence`.
+    First tries the entry's internal anchor target (preferred — exact and
+    cheap). If the entry has no target, or the target is not defined past the
+    TOC region, falls back to a visual-prominence text-match search.
     """
     id_index = _build_id_index(html)
     locations: list[BodyLocation] = []
     for entry in region.entries:
-        if not entry.target:
-            continue
-        name = entry.target.lstrip("#")
-        if not name:
-            continue
-        body_source = id_index.get(name)
-        if body_source is None:
-            continue
-        # Skip targets that point inside the TOC region itself (shouldn't
-        # happen in well-formed filings, but guard against self-loops).
-        body_text_start = _source_byte_to_text_offset(rendered.source_offset, body_source)
-        if body_text_start <= region.text_end:
+        body_text_start: int | None = None
+        body_source: int | None = None
+
+        if entry.target:
+            name = entry.target.lstrip("#")
+            if name:
+                src = id_index.get(name)
+                if src is not None:
+                    text_pos = _source_byte_to_text_offset(rendered.source_offset, src)
+                    if text_pos > region.text_end:
+                        body_text_start = text_pos
+                        body_source = src
+
+        if body_text_start is None:
+            text_pos = resolve_via_prominence(rendered, region, entry)
+            if text_pos is not None:
+                body_text_start = text_pos
+                if text_pos < len(rendered.source_offset):
+                    body_source = rendered.source_offset[text_pos]
+
+        if body_text_start is None:
             continue
         locations.append(
             BodyLocation(
                 entry=entry,
                 body_text_start=body_text_start,
-                body_source_start=body_source,
+                body_source_start=body_source if body_source is not None else 0,
             )
         )
     return locations
