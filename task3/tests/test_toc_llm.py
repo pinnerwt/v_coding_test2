@@ -1,6 +1,7 @@
 """Tests for the LLM-driven TOC fallback."""
 
 import json
+import os
 import pathlib
 from unittest.mock import MagicMock
 
@@ -136,3 +137,18 @@ def test_propose_toc_returns_none_on_client_exception():
     client.chat.side_effect = RuntimeError("network down")
 
     assert propose_toc(rendered, html, client=client) is None
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_LIVE_LLM") != "1" or not GE_2018.exists(),
+    reason="live LLM test gated on RUN_LIVE_LLM=1 and GE 2018 fixture",
+)
+def test_propose_toc_live_ge_2018():
+    """End-to-end with the real LLM. Does not run in CI."""
+    from sec_toolbox.toc_llm import propose_toc
+
+    html = GE_2018.read_bytes()
+    rendered = render_html(html)
+    region = propose_toc(rendered, html)
+    assert region is not None, "live LLM should produce a region for GE 2018"
+    assert len(region.entries) >= 10
