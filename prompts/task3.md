@@ -11,3 +11,5 @@ Now let's talk about how to proceed what wa want for task3. Can we look at three
 I want it to be more generalized: You mentioned short slice + key words, but these key words might never happen in 2012 documents. How can we determine which sections different slices of texts belong to without these keywords?
 
 You are again defining key words, and the decision rule is also too specific. Please think of "how a human will proceed this if he has to read 1k documents". What will he asked himselves about different paragraphs, and how would he split different sections/pages to return a structured data?
+
+There are too many edge cases and use LLM is much easier in this case. We need LLM fallback for TOC findings.

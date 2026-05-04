@@ -17,6 +17,18 @@ PORT="${PORT:-8080}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 
+# Auto-load env vars from task3/.env if present so the API key doesn't need
+# to be re-exported in every shell. Variables already in the shell env take
+# precedence — .env only fills in what's missing.
+if [[ -f .env ]]; then
+  while IFS='=' read -r key val; do
+    [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+    val="${val%\"}"; val="${val#\"}"
+    val="${val%\'}"; val="${val#\'}"
+    [[ -z "${!key:-}" ]] && export "$key=$val"
+  done < .env
+fi
+
 restart_only=0
 if [[ "${1:-}" == "--restart" ]]; then
   restart_only=1
