@@ -9,10 +9,18 @@ Three independent cross-checks:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
+from .render import render_html
 from .taxonomy import items_for_year
+
+_WS_RE = re.compile(r"\s+")
+
+
+def _normalize(text: str) -> str:
+    return _WS_RE.sub(" ", text.replace("\xa0", " ")).strip().lower()
 
 
 @dataclass(frozen=True)
@@ -36,3 +44,47 @@ def _item_sort_key(num: str) -> tuple[int, str]:
     head = "".join(ch for ch in num if ch.isdigit())
     tail = num[len(head) :]
     return (int(head) if head else 0, tail)
+
+
+_ROUNDTRIP_PROBE_LEN = 200
+
+
+def verify_char_ranges(items: list[dict[str, Any]], html: bytes) -> list[Issue]:
+    """For each row with status ``extracted``, re-render the bytes within
+    ``char_range`` and confirm the slice's ``content_text`` lines up with the
+    re-rendered text. Roundtrip succeeds when a ~200-char prefix of either
+    side is contained in the other (after whitespace normalization).
+    """
+    issues: list[Issue] = []
+    for row in items:
+        if row.get("status") != "extracted":
+            continue
+        char_range = row.get("char_range")
+        if not char_range or len(char_range) != 2:
+            continue
+        start, end = char_range
+        if not (0 <= start < end <= len(html)):
+            issues.append(
+                Issue(
+                    item_number=row.get("item_number"),
+                    message=f"char_range out of bounds: {char_range}",
+                )
+            )
+            continue
+        re_rendered = _normalize(render_html(html[start:end]).text)
+        content = _normalize(row.get("content_text", ""))
+        if not content:
+            continue
+        probe_a = content[:_ROUNDTRIP_PROBE_LEN]
+        probe_b = re_rendered[:_ROUNDTRIP_PROBE_LEN]
+        if probe_a and probe_a in re_rendered:
+            continue
+        if probe_b and probe_b in content:
+            continue
+        issues.append(
+            Issue(
+                item_number=row.get("item_number"),
+                message="char_range roundtrip mismatch",
+            )
+        )
+    return issues
