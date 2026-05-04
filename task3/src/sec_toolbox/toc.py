@@ -113,8 +113,16 @@ def find_toc_region(rendered: Rendered, html: bytes) -> TOCRegion | None:
         else:
             runs.append([cur])
 
-    # Pick the longest run.
-    best = max(runs, key=len)
+    # Score each run: prefer runs whose entries include many "Item N"-prefixed
+    # titles (the primary 10-K TOC), with run length as tie-breaker. Filings
+    # like ExxonMobil contain a longer financial-section TOC that lacks Item
+    # prefixes; that one must lose to the shorter but Item-rich primary TOC.
+    def _score(run: list[tuple[int, str]]) -> tuple[int, int]:
+        ents = _build_entries(rendered, run)
+        item_count = sum(1 for e in ents if _ITEM_TITLE_RE.match(e.text))
+        return (item_count, len(run))
+
+    best = max(runs, key=_score)
     chunk_start = best[0][0]
     chunk_end = best[-1][0]
     first_chunk = rendered.chunks[chunk_start]
@@ -133,6 +141,7 @@ def find_toc_region(rendered: Rendered, html: bytes) -> TOCRegion | None:
 
 _PAGE_NUM_RE = re.compile(r"^\d+$")
 _ITEM_PREFIX_RE = re.compile(r"^Item\s+\d+[A-Z]?\.?$", re.IGNORECASE)
+_ITEM_TITLE_RE = re.compile(r"^Item\s+\d+[A-Z]?\b", re.IGNORECASE)
 
 
 def _is_page_number(text: str) -> bool:
