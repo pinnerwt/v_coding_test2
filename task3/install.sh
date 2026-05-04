@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # Install deps, build the Docker image, and serve the /extract API.
-#   ./install.sh             # install + build + run (idempotent)
-#   ./install.sh --restart   # stop and re-run an already-built container
+#   ./install.sh             # bootstrap uv + uv sync + build + run
+#   ./install.sh --restart   # rebuild image with current code + restart container
+#
+# --restart skips the uv bootstrap and the local 'uv sync' step (those only
+# need to run once per dependency change), but it DOES re-run 'docker build'
+# so any code edits under src/ or prompts/ make it into the running image.
+# 'docker build' reuses cached layers when pyproject.toml/uv.lock are
+# unchanged, so the rebuild on a code-only edit is fast.
 
 set -euo pipefail
 
@@ -23,6 +29,11 @@ stop_existing() {
   fi
 }
 
+build_image() {
+  echo ">> building image: $IMAGE"
+  docker build -t "$IMAGE" .
+}
+
 run_container() {
   echo ">> starting container on port $PORT"
   docker run -d --name "$CONTAINER" \
@@ -36,10 +47,7 @@ run_container() {
 }
 
 if [[ $restart_only -eq 1 ]]; then
-  if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    echo "image $IMAGE not built yet; run ./install.sh first" >&2
-    exit 1
-  fi
+  build_image
   stop_existing
   run_container
   exit 0
@@ -54,8 +62,6 @@ fi
 echo ">> syncing python deps (uv sync)"
 uv sync
 
-echo ">> building image: $IMAGE"
-docker build -t "$IMAGE" .
-
+build_image
 stop_existing
 run_container
