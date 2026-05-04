@@ -150,18 +150,28 @@ def resolve_entries_to_body(
 _ITEM_TITLE_PREFIX_RE = re.compile(r"^\s*Item\s+\d+[A-Z]?\.?\s*[:\-–—]?\s*", re.IGNORECASE)
 _ITEM_HEAD_RE = re.compile(r"^\s*Item\s+\d+[A-Z]?\b", re.IGNORECASE)
 _ITEM_NUMBER_RE = re.compile(r"^\s*Item\s+(\d+[A-Z]?)\b", re.IGNORECASE)
+_TARGET_ITEM_RE = re.compile(r"#?\s*item[_\-\s]*(\d+[a-z]?)(?![0-9a-z])", re.IGNORECASE)
 
 
-def _extract_item_number(entry_text: str) -> str | None:
-    m = _ITEM_NUMBER_RE.match(entry_text)
+def _extract_item_number_from_target(target: str | None) -> str | None:
+    if not target:
+        return None
+    m = _TARGET_ITEM_RE.match(target.lstrip("#"))
     if not m:
         return None
     return m.group(1).upper()
 
 
+def _extract_item_number(entry_text: str, target: str | None = None) -> str | None:
+    m = _ITEM_NUMBER_RE.match(entry_text)
+    if m:
+        return m.group(1).upper()
+    return _extract_item_number_from_target(target)
+
+
 def _match_item(entry: TOCEntry, schedule: list[Item]) -> Item | None:
     """Look up the canonical Item for a TOC entry by item-number match."""
-    num = _extract_item_number(entry.text)
+    num = _extract_item_number(entry.text, entry.target)
     if not num:
         return None
     for item in schedule:
@@ -175,7 +185,9 @@ def _strip_item_prefix(text: str) -> str:
 
 
 def _is_item_entry(entry: TOCEntry) -> bool:
-    return bool(_ITEM_HEAD_RE.match(entry.text))
+    if _ITEM_HEAD_RE.match(entry.text):
+        return True
+    return _extract_item_number_from_target(entry.target) is not None
 
 
 def segment(html: bytes, fiscal_year: int | None = None) -> list[Slice]:

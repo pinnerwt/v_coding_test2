@@ -138,3 +138,52 @@ def test_ibm_slices_have_canonical_item_numbers():
     assert "Selected Financial Data" in by_num["6"].canonical_title
     # 1C didn't exist in 2019
     assert "1C" not in by_num
+
+
+def test_is_item_entry_recognized_via_anchor_target():
+    """Modern filings (MSFT 2023, BRKA 2025) put 'Item 1' and 'Business' in
+    sibling table cells, so the TOC entry text is just 'Business' but the
+    href target is '#item_1_business'. We must still recognize this as an
+    Item entry and recover the item number from the target.
+    """
+    from sec_toolbox.segment import _extract_item_number_from_target, _is_item_entry
+    from sec_toolbox.toc import TOCEntry
+
+    e = TOCEntry(text="Business", target="#item_1_business", source_start=0, text_start=0)
+    assert _is_item_entry(e) is True
+    assert _extract_item_number_from_target(e.target) == "1"
+
+    e2 = TOCEntry(text="Risk Factors", target="#ITEM_1A_RISK_FACTORS", source_start=0, text_start=0)
+    assert _is_item_entry(e2) is True
+    assert _extract_item_number_from_target(e2.target) == "1A"
+
+    # Already-prefixed text path still works.
+    e3 = TOCEntry(text="Item 7. MD&A", target=None, source_start=0, text_start=0)
+    assert _is_item_entry(e3) is True
+
+    # Non-item targets are still rejected.
+    e4 = TOCEntry(text="Glossary", target="#glossary", source_start=0, text_start=0)
+    assert _is_item_entry(e4) is False
+
+
+MSFT_2023 = FIXTURES / "789019/000095017023035122/msft-20230630.htm"
+BRKA_2025 = FIXTURES / "1067983/000119312526083899/brka-20251231.htm"
+
+
+@pytest.mark.skipif(not MSFT_2023.exists(), reason="MSFT 2023 fixture not cached")
+def test_msft_2023_extracts_full_item_set():
+    html = MSFT_2023.read_bytes()
+    slices = segment(html, fiscal_year=2023)
+    item_numbers = {s.item_number for s in slices if s.item_number}
+    assert {"1", "1A", "7", "8"} <= item_numbers
+    assert len(slices) >= 20
+
+
+@pytest.mark.skipif(not BRKA_2025.exists(), reason="BRKA 2025 fixture not cached")
+def test_brka_2025_extracts_full_item_set():
+    html = BRKA_2025.read_bytes()
+    slices = segment(html, fiscal_year=2025)
+    item_numbers = {s.item_number for s in slices if s.item_number}
+    assert {"1", "1A", "7", "8"} <= item_numbers
+    # BRKA incorporates Part III (Items 10-14) by reference from its proxy.
+    assert len(slices) >= 17
