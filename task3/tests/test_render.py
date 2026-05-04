@@ -73,9 +73,7 @@ def test_render_ibm_fixture():
     r = render_html(html)
     assert len(r.text) > 100_000
     # IBM 2019 uses "ITEM 1." in caps
-    assert any(
-        "ITEM 1" in c.text.upper() and "BUSINESS" in c.text.upper() for c in r.chunks
-    )
+    assert any("ITEM 1" in c.text.upper() and "BUSINESS" in c.text.upper() for c in r.chunks)
 
 
 @pytest.mark.skipif(not EXXON.exists(), reason="Exxon fixture not cached")
@@ -85,9 +83,7 @@ def test_render_exxon_fixture():
     assert len(r.text) > 100_000
     # Exxon's inline-XBRL TOC puts each label in its own table cell, so
     # "Item 1." and "Business" land in adjacent chunks rather than merged.
-    item_chunks = [
-        i for i, c in enumerate(r.chunks) if c.text.strip().startswith("Item 1.")
-    ]
+    item_chunks = [i for i, c in enumerate(r.chunks) if c.text.strip().startswith("Item 1.")]
     assert item_chunks, "expected an 'Item 1.' chunk"
     follow = r.chunks[item_chunks[0] + 1].text
     assert "Business" in follow

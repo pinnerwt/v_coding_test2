@@ -48,16 +48,55 @@ class Rendered:
 
 
 _BLOCK_TAGS = {
-    "p", "div", "li", "tr", "td", "th",
-    "h1", "h2", "h3", "h4", "h5", "h6",
-    "br", "hr", "section", "article", "table", "ul", "ol",
-    "header", "footer", "blockquote", "pre", "address",
-    "figure", "form", "fieldset", "body", "html", "main", "nav", "aside",
+    "p",
+    "div",
+    "li",
+    "tr",
+    "td",
+    "th",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "br",
+    "hr",
+    "section",
+    "article",
+    "table",
+    "ul",
+    "ol",
+    "header",
+    "footer",
+    "blockquote",
+    "pre",
+    "address",
+    "figure",
+    "form",
+    "fieldset",
+    "body",
+    "html",
+    "main",
+    "nav",
+    "aside",
 }
 
 _VOID_TAGS = {
-    "br", "hr", "img", "input", "meta", "link", "area", "base",
-    "col", "embed", "param", "source", "track", "wbr",
+    "br",
+    "hr",
+    "img",
+    "input",
+    "meta",
+    "link",
+    "area",
+    "base",
+    "col",
+    "embed",
+    "param",
+    "source",
+    "track",
+    "wbr",
 }
 
 _SKIP_TAGS = {"script", "style", "head", "noscript"}
@@ -282,9 +321,7 @@ def render_html(html: bytes) -> Rendered:
         if tag_name in _SKIP_TAGS:
             flush_chunk()
             if not is_close:
-                close_re = re.compile(
-                    rf"</\s*(?:\w+:)?{re.escape(tag_name)}\s*>", re.IGNORECASE
-                )
+                close_re = re.compile(rf"</\s*(?:\w+:)?{re.escape(tag_name)}\s*>", re.IGNORECASE)
                 close_m = close_re.search(src, tag_end)
                 pos = close_m.end() if close_m else n
             else:
