@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass
 
 from .render import Rendered, render_html
+from .taxonomy import Item, items_for_year
 from .toc import TOCEntry, TOCRegion, find_toc_region
 
 
@@ -34,6 +35,9 @@ class Slice:
     char_range: tuple[int, int]
     text_range: tuple[int, int]
     entry: TOCEntry
+    part: str | None = None
+    item_number: str | None = None
+    canonical_title: str | None = None
 
 
 _ID_ATTR_RE = re.compile(rb"""\b(?:id|name)\s*=\s*['"]([^'"]+)['"]""", re.IGNORECASE)
@@ -145,6 +149,25 @@ def resolve_entries_to_body(
 
 _ITEM_TITLE_PREFIX_RE = re.compile(r"^\s*Item\s+\d+[A-Z]?\.?\s*[:\-–—]?\s*", re.IGNORECASE)
 _ITEM_HEAD_RE = re.compile(r"^\s*Item\s+\d+[A-Z]?\b", re.IGNORECASE)
+_ITEM_NUMBER_RE = re.compile(r"^\s*Item\s+(\d+[A-Z]?)\b", re.IGNORECASE)
+
+
+def _extract_item_number(entry_text: str) -> str | None:
+    m = _ITEM_NUMBER_RE.match(entry_text)
+    if not m:
+        return None
+    return m.group(1).upper()
+
+
+def _match_item(entry: TOCEntry, schedule: list[Item]) -> Item | None:
+    """Look up the canonical Item for a TOC entry by item-number match."""
+    num = _extract_item_number(entry.text)
+    if not num:
+        return None
+    for item in schedule:
+        if item.item_number == num:
+            return item
+    return None
 
 
 def _strip_item_prefix(text: str) -> str:
@@ -155,13 +178,17 @@ def _is_item_entry(entry: TOCEntry) -> bool:
     return bool(_ITEM_HEAD_RE.match(entry.text))
 
 
-def segment(html: bytes) -> list[Slice]:
+def segment(html: bytes, fiscal_year: int | None = None) -> list[Slice]:
     """End-to-end pipeline: render → find TOC → resolve → slice into Items.
 
     Returns a list of :class:`Slice` ordered by document position. Each slice
     spans from one Item heading to the next; the final slice runs to the end
     of the rendered text. Part-headers and non-Item TOC entries are filtered
     out — only Items get slices.
+
+    When ``fiscal_year`` is given, each slice is mapped against the year's
+    canonical Item schedule and carries ``part``, ``item_number``, and
+    ``canonical_title`` fields. Without a year these fields are ``None``.
     """
     rendered = render_html(html)
     region = find_toc_region(rendered, html)
@@ -178,6 +205,7 @@ def segment(html: bytes) -> list[Slice]:
             continue
         deduped.append(b)
 
+    schedule: list[Item] | None = items_for_year(fiscal_year) if fiscal_year is not None else None
     slices: list[Slice] = []
     text = rendered.text
     src_offsets = rendered.source_offset
@@ -195,6 +223,7 @@ def segment(html: bytes) -> list[Slice]:
         char_end = src_offsets[last_char_idx] + 1 if last_char_idx < len(src_offsets) else len(html)
         if char_end <= char_start:
             continue
+        canon = _match_item(loc.entry, schedule) if schedule is not None else None
         slices.append(
             Slice(
                 item_title=_strip_item_prefix(loc.entry.text),
@@ -202,6 +231,9 @@ def segment(html: bytes) -> list[Slice]:
                 char_range=(char_start, char_end),
                 text_range=(text_start, text_end),
                 entry=loc.entry,
+                part=canon.part if canon else None,
+                item_number=canon.item_number if canon else None,
+                canonical_title=canon.canonical_title if canon else None,
             )
         )
     return slices

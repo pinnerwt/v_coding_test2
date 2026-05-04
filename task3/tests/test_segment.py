@@ -112,3 +112,29 @@ def test_segment_ibm_produces_slices():
     assert "Risk Factors" in titles
     for a, b in zip(slices, slices[1:], strict=False):
         assert a.char_range[1] <= b.char_range[0]
+
+
+@pytest.mark.skipif(not APPLE.exists(), reason="Apple fixture not cached")
+def test_apple_slices_have_canonical_item_numbers():
+    html = APPLE.read_bytes()
+    slices = segment(html, fiscal_year=2023)
+    by_num = {s.item_number: s for s in slices if s.item_number}
+    assert by_num["1"].canonical_title == "Business"
+    assert by_num["1A"].canonical_title == "Risk Factors"
+    assert by_num["1C"].canonical_title.startswith("Cybersecurity")
+    assert by_num["1"].part == "I"
+    assert by_num["7"].part == "II"
+    assert by_num["10"].part == "III"
+    assert by_num["15"].part == "IV"
+
+
+@pytest.mark.skipif(not IBM.exists(), reason="IBM fixture not cached")
+def test_ibm_slices_have_canonical_item_numbers():
+    html = IBM.read_bytes()
+    slices = segment(html, fiscal_year=2019)
+    by_num = {s.item_number: s for s in slices if s.item_number}
+    # IBM 2019 has Item 6 = Selected Financial Data (pre-2021)
+    assert "6" in by_num
+    assert "Selected Financial Data" in by_num["6"].canonical_title
+    # 1C didn't exist in 2019
+    assert "1C" not in by_num
