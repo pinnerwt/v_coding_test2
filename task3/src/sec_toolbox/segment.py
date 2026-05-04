@@ -12,13 +12,14 @@ prominently-formatted chunk whose normalized text matches the entry title.
 
 from __future__ import annotations
 
-import bisect
 import re
 from dataclasses import dataclass
 
+from ._locate import build_id_index, source_byte_to_text_offset
 from .render import Rendered, render_html
 from .taxonomy import Item, items_for_year
 from .toc import TOCEntry, TOCRegion, find_toc_region
+from .toc_llm import propose_toc
 
 
 @dataclass
@@ -40,35 +41,10 @@ class Slice:
     canonical_title: str | None = None
 
 
-_ID_ATTR_RE = re.compile(rb"""\b(?:id|name)\s*=\s*['"]([^'"]+)['"]""", re.IGNORECASE)
-
-
-def _build_id_index(html: bytes) -> dict[str, int]:
-    """Map every ``id=``/``name=`` attribute value to the source byte where the
-    enclosing tag opens.
-
-    When an anchor target is defined more than once we keep the *last*
-    occurrence — the body usage typically follows TOC link declarations, and
-    the last definition is the body anchor. The previous declaration in the
-    TOC itself is intentionally overwritten.
-    """
-    index: dict[str, int] = {}
-    for m in _ID_ATTR_RE.finditer(html):
-        name = m.group(1).decode("latin-1", errors="replace")
-        # Walk back from the attribute to the '<' of the opening tag.
-        lt = html.rfind(b"<", 0, m.start())
-        index[name] = lt if lt != -1 else m.start()
-    return index
-
-
-def _source_byte_to_text_offset(source_offsets: list[int], byte_pos: int) -> int:
-    """Map a source byte position to the smallest rendered-text index whose
-    ``source_offset`` is >= ``byte_pos``. Returns ``len(source_offsets)`` if
-    no rendered character originates at or after that byte.
-
-    ``source_offsets`` is monotonically non-decreasing, so binary search works.
-    """
-    return bisect.bisect_left(source_offsets, byte_pos)
+# Re-exports kept for backward compatibility with tests that imported the
+# private helpers directly from this module.
+_build_id_index = build_id_index
+_source_byte_to_text_offset = source_byte_to_text_offset
 
 
 _WS_RE = re.compile(r"\s+")
@@ -190,6 +166,16 @@ def _is_item_entry(entry: TOCEntry) -> bool:
     return _extract_item_number_from_target(entry.target) is not None
 
 
+_MIN_ITEM_COUNT = 10
+_MIN_RESOLUTION_RATE = 0.80
+
+
+def _resolution_rate(item_count: int, entry_count: int) -> float:
+    if entry_count == 0:
+        return 0.0
+    return item_count / entry_count
+
+
 def segment(html: bytes, fiscal_year: int | None = None) -> list[Slice]:
     """End-to-end pipeline: render → find TOC → resolve → slice into Items.
 
@@ -204,11 +190,41 @@ def segment(html: bytes, fiscal_year: int | None = None) -> list[Slice]:
     """
     rendered = render_html(html)
     region = find_toc_region(rendered, html)
-    if region is None:
-        return []
-    body_locs = resolve_entries_to_body(rendered, region, html)
+
+    body_locs: list[BodyLocation] = []
+    if region is not None:
+        body_locs = resolve_entries_to_body(rendered, region, html)
 
     item_locs = [b for b in body_locs if _is_item_entry(b.entry)]
+    needs_fallback = (
+        region is None
+        or len(item_locs) < _MIN_ITEM_COUNT
+        or _resolution_rate(len(item_locs), len(region.entries)) < _MIN_RESOLUTION_RATE
+    )
+
+    if needs_fallback:
+        llm_region = propose_toc(rendered, html)
+        if llm_region is not None:
+            # propose_toc already places each TOCEntry at its resolved body
+            # position (anchor or snippet match), so trust those rather than
+            # re-running anchor/prominence resolution.
+            llm_item_locs = [
+                BodyLocation(
+                    entry=e,
+                    body_text_start=e.text_start,
+                    body_source_start=e.source_start,
+                )
+                for e in llm_region.entries
+                if _is_item_entry(e)
+            ]
+            # Accept only if the LLM produced strictly more items than the
+            # heuristic — anything else and we'd be making things worse.
+            if len(llm_item_locs) > len(item_locs):
+                region = llm_region
+                item_locs = llm_item_locs
+
+    if not item_locs:
+        return []
     item_locs.sort(key=lambda b: b.body_text_start)
     # Drop duplicate text positions (some filings re-use targets across rows).
     deduped: list[BodyLocation] = []

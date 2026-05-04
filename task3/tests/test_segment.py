@@ -187,3 +187,45 @@ def test_brka_2025_extracts_full_item_set():
     assert {"1", "1A", "7", "8"} <= item_numbers
     # BRKA incorporates Part III (Items 10-14) by reference from its proxy.
     assert len(slices) >= 17
+
+
+GE_2018 = FIXTURES / "40545/000004054519000014/ge10-k2018.htm"
+
+
+@pytest.mark.skipif(not GE_2018.exists(), reason="GE 2018 fixture not cached")
+def test_segment_falls_back_to_llm_when_heuristic_under_resolves(monkeypatch):
+    """GE 2018: heuristic locks onto a nested MD&A sub-TOC. The confidence
+    gate should detect under-resolution (< 10 items) and call propose_toc
+    instead. We mock propose_toc to return a region with several known
+    item-shaped entries; the segmenter must use that region."""
+    import sec_toolbox.segment as seg
+    from sec_toolbox.render import render_html
+    from sec_toolbox.toc import TOCEntry, TOCRegion
+
+    html = GE_2018.read_bytes()
+    rendered = render_html(html)
+
+    fake_entries: list[TOCEntry] = []
+    for n in ("1", "1A", "2", "3", "7", "7A", "8", "15"):
+        needle = f"Item {n}."
+        idx = rendered.text.find(needle, 5000)
+        if idx > 0:
+            src = rendered.source_offset[idx] if idx < len(rendered.source_offset) else 0
+            fake_entries.append(
+                TOCEntry(text=f"Item {n}. ...", target=None, source_start=src, text_start=idx)
+            )
+    fake_region = TOCRegion(
+        text_start=0,
+        text_end=fake_entries[0].text_start - 1 if fake_entries else 0,
+        chunk_start=0,
+        chunk_end=0,
+        entries=fake_entries,
+    )
+
+    monkeypatch.setattr(seg, "propose_toc", lambda r, h, client=None: fake_region)
+
+    slices = seg.segment(html, fiscal_year=2018)
+    item_numbers = {s.item_number for s in slices if s.item_number}
+    # The fallback should pull at least Item 1, 7, 8 into the result.
+    assert {"1", "7", "8"} <= item_numbers
+    assert len(slices) >= 5

@@ -17,9 +17,9 @@ import json
 import re
 from pathlib import Path
 
+from ._locate import build_id_index, source_byte_to_text_offset
 from .llm import LLMClient
 from .render import Rendered
-from .segment import _build_id_index, _source_byte_to_text_offset
 from .toc import TOCEntry, TOCRegion
 
 _PROMPT_PATH = Path(__file__).parent.parent.parent / "prompts" / "toc_extraction.md"
@@ -66,7 +66,7 @@ def _resolve_item(
         name = anchor.lstrip("#")
         src = id_index.get(name)
         if src is not None:
-            text_pos = _source_byte_to_text_offset(rendered.source_offset, src)
+            text_pos = source_byte_to_text_offset(rendered.source_offset, src)
             if text_pos > body_start:
                 return text_pos, src
     if snippet:
@@ -117,7 +117,7 @@ def propose_toc(
     if body_start < 0:
         return None
 
-    id_index = _build_id_index(html)
+    id_index = build_id_index(html)
     entries: list[TOCEntry] = []
     for item in items:
         if not isinstance(item, dict):
