@@ -29,3 +29,40 @@ def test_finds_toc_in_ibm():
     region = find_toc_region(rendered, html)
     assert region is not None
     assert len(region.entries) >= 14
+
+
+@pytest.mark.skipif(not APPLE.exists(), reason="Apple fixture not cached")
+def test_parses_apple_toc_entries():
+    html = APPLE.read_bytes()
+    rendered = render_html(html)
+    region = find_toc_region(rendered, html)
+    titles = [e.text for e in region.entries]
+    assert any("Business" in t for t in titles)
+    assert any("Risk Factors" in t for t in titles)
+    assert any("Cybersecurity" in t for t in titles)
+    # Page-number-only chunks should not appear as standalone entries
+    assert not any(t.strip().isdigit() for t in titles)
+
+
+@pytest.mark.skipif(not APPLE.exists(), reason="Apple fixture not cached")
+def test_apple_toc_entries_have_targets():
+    html = APPLE.read_bytes()
+    rendered = render_html(html)
+    region = find_toc_region(rendered, html)
+    # Apple uses internal anchors throughout its TOC.
+    targeted = [e for e in region.entries if e.target]
+    assert len(targeted) >= 16
+    # Each target is a fragment identifier
+    assert all(e.target.startswith("#") for e in targeted)
+
+
+@pytest.mark.skipif(not IBM.exists(), reason="IBM fixture not cached")
+def test_parses_ibm_toc_entries():
+    html = IBM.read_bytes()
+    rendered = render_html(html)
+    region = find_toc_region(rendered, html)
+    titles = [e.text for e in region.entries]
+    # IBM 2019 merges "Item 1. Business" into one chunk; the entry text
+    # contains the substantive title.
+    assert any("Business" in t for t in titles)
+    assert any("Risk Factors" in t for t in titles)

@@ -66,8 +66,15 @@ def _chunk_anchor_target(
     if idx < 0:
         return None
     open_end, close_start, target = ranges[idx]
-    if open_end <= chunk.source_start and chunk.source_end <= close_start:
+    if open_end <= chunk.source_start < close_start:
         return target
+    # Some filings split a single rendered word across consecutive
+    # <a href="#X">f</a><a href="#X">oo</a> spans; the chunk may start
+    # past the first anchor's close. Probe the next anchor too.
+    if idx + 1 < len(ranges):
+        open_end2, close_start2, target2 = ranges[idx + 1]
+        if open_end2 <= chunk.source_start < close_start2:
+            return target2
     return None
 
 
@@ -113,15 +120,7 @@ def find_toc_region(rendered: Rendered, html: bytes) -> TOCRegion | None:
     first_chunk = rendered.chunks[chunk_start]
     last_chunk = rendered.chunks[chunk_end]
 
-    entries = [
-        TOCEntry(
-            text=rendered.chunks[i].text.strip(),
-            target=target,
-            source_start=rendered.chunks[i].source_start,
-            text_start=rendered.chunks[i].text_start,
-        )
-        for i, target in best
-    ]
+    entries = _build_entries(rendered, best)
 
     return TOCRegion(
         text_start=first_chunk.text_start,
@@ -130,3 +129,62 @@ def find_toc_region(rendered: Rendered, html: bytes) -> TOCRegion | None:
         chunk_end=chunk_end,
         entries=entries,
     )
+
+
+_PAGE_NUM_RE = re.compile(r"^\d+$")
+_ITEM_PREFIX_RE = re.compile(r"^Item\s+\d+[A-Z]?\.?$", re.IGNORECASE)
+
+
+def _is_page_number(text: str) -> bool:
+    return bool(_PAGE_NUM_RE.match(text.strip()))
+
+
+def _is_item_prefix(text: str) -> bool:
+    return bool(_ITEM_PREFIX_RE.match(text.strip()))
+
+
+def _build_entries(rendered: Rendered, anchored_run: list[tuple[int, str]]) -> list[TOCEntry]:
+    """Group anchored chunks into one entry per Item.
+
+    Strategy: walk the run; merge consecutive chunks that share the same
+    anchor target. Within a group, drop pure-numeric chunks (page numbers)
+    and keep the substantive title text. The first chunk's text_start /
+    source_start anchor the entry's location.
+    """
+    entries: list[TOCEntry] = []
+    i = 0
+    while i < len(anchored_run):
+        chunk_idx, target = anchored_run[i]
+        group = [(chunk_idx, target)]
+        j = i + 1
+        while j < len(anchored_run) and anchored_run[j][1] == target:
+            group.append(anchored_run[j])
+            j += 1
+        i = j
+
+        title_parts: list[str] = []
+        first_chunk = rendered.chunks[group[0][0]]
+        for c_idx, _ in group:
+            text = rendered.chunks[c_idx].text.strip()
+            if not text or _is_page_number(text):
+                continue
+            title_parts.append(text)
+
+        if not title_parts:
+            continue
+
+        # If first part looks like "Item N." prefix, fold it into the title.
+        if len(title_parts) >= 2 and _is_item_prefix(title_parts[0]):
+            text = title_parts[0].rstrip(".") + ". " + " ".join(title_parts[1:])
+        else:
+            text = " ".join(title_parts)
+
+        entries.append(
+            TOCEntry(
+                text=text,
+                target=target,
+                source_start=first_chunk.source_start,
+                text_start=first_chunk.text_start,
+            )
+        )
+    return entries
