@@ -13,3 +13,5 @@ I want it to be more generalized: You mentioned short slice + key words, but the
 You are again defining key words, and the decision rule is also too specific. Please think of "how a human will proceed this if he has to read 1k documents". What will he asked himselves about different paragraphs, and how would he split different sections/pages to return a structured data?
 
 There are too many edge cases and use LLM is much easier in this case. We need LLM fallback for TOC findings.
+
+How about a huge refactor: we use LangGraph, with different nodes: "how to locate toc", "how to locate different pages", "Text for different Item", etc. The agent will then decide what to do
