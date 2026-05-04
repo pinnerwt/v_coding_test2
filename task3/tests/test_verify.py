@@ -1,12 +1,13 @@
 """Self-verification: schedule completeness, char_range roundtrip, XBRL cross-check."""
 
+import json
 import pathlib
 
 import pytest
 
 from sec_toolbox.extract import extract
 from sec_toolbox.taxonomy import items_for_year
-from sec_toolbox.verify import verify_char_ranges, verify_schedule
+from sec_toolbox.verify import verify_char_ranges, verify_schedule, verify_xbrl_metadata
 
 FIXTURES = pathlib.Path(__file__).parent.parent / "data/raw/archive"
 APPLE = FIXTURES / "320193/000032019323000106/aapl-20230930.htm"
@@ -71,3 +72,28 @@ def test_char_range_roundtrip_flags_bogus_range():
     issues = verify_char_ranges(bogus, html)
     assert issues, "expected a roundtrip issue"
     assert "1" in {i.item_number for i in issues}
+
+
+_FACTS_FIXTURE = pathlib.Path(__file__).parent / "fixtures/apple_2023_facts.json"
+
+
+def _load_apple_facts() -> dict:
+    return json.loads(_FACTS_FIXTURE.read_text())
+
+
+def test_xbrl_metadata_matches_extraction():
+    extracted_meta = {"cik": "320193", "period_end": "2023-09-30"}
+    facts = _load_apple_facts()
+    assert verify_xbrl_metadata(extracted_meta, facts) == []
+
+
+def test_xbrl_metadata_flags_cik_mismatch():
+    extracted_meta = {"cik": "789019", "period_end": "2023-09-30"}
+    issues = verify_xbrl_metadata(extracted_meta, _load_apple_facts())
+    assert any("cik" in i.message.lower() for i in issues)
+
+
+def test_xbrl_metadata_flags_period_end_not_in_facts():
+    extracted_meta = {"cik": "320193", "period_end": "2030-01-01"}
+    issues = verify_xbrl_metadata(extracted_meta, _load_apple_facts())
+    assert any("period" in i.message.lower() for i in issues)
