@@ -78,3 +78,61 @@ def test_propose_toc_happy_path_anchor_resolution():
     assert len(region.entries) >= 2
     for e in region.entries:
         assert e.text_start > region.text_start
+
+
+def test_propose_toc_returns_none_on_malformed_json():
+    from sec_toolbox.toc_llm import propose_toc
+
+    html = b"<html><body>x</body></html>"
+    rendered = render_html(html)
+    client = MagicMock()
+    client.chat.return_value = "this is not json {{"
+
+    assert propose_toc(rendered, html, client=client) is None
+
+
+def test_propose_toc_returns_none_when_marker_not_found():
+    from sec_toolbox.toc_llm import propose_toc
+
+    html = b"<html><body>some text without the marker</body></html>"
+    rendered = render_html(html)
+    client = _mock_client(
+        {
+            "toc_end_marker": "NOT IN THE TEXT",
+            "items": [{"item_number": "1", "heading_snippet": "x"}],
+        }
+    )
+
+    assert propose_toc(rendered, html, client=client) is None
+
+
+def test_propose_toc_returns_none_when_zero_items_resolve():
+    from sec_toolbox.toc_llm import propose_toc
+
+    html = b"<html><body>BODY START here is some content</body></html>"
+    rendered = render_html(html)
+    client = _mock_client(
+        {
+            "toc_end_marker": "BODY START",
+            "items": [
+                {
+                    "item_number": "1",
+                    "anchor": "#nonexistent",
+                    "heading_snippet": "this snippet is not in the text",
+                }
+            ],
+        }
+    )
+
+    assert propose_toc(rendered, html, client=client) is None
+
+
+def test_propose_toc_returns_none_on_client_exception():
+    from sec_toolbox.toc_llm import propose_toc
+
+    html = b"<html><body>x</body></html>"
+    rendered = render_html(html)
+    client = MagicMock()
+    client.chat.side_effect = RuntimeError("network down")
+
+    assert propose_toc(rendered, html, client=client) is None
