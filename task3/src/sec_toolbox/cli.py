@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -41,6 +42,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("survey")
     s.add_argument("--out", default="data/survey")
+
+    s = sub.add_parser("eval")
+    s.add_argument("--out", default="data/eval")
 
     return p
 
@@ -90,6 +94,32 @@ def main(argv: list[str] | None = None) -> int:
             from sec_toolbox.survey import run_survey
 
             run_survey(fetcher=fetcher, out_dir=Path(args.out))
+        elif args.cmd == "eval":
+            from sec_toolbox.eval import EvalSpec, run_eval
+            from sec_toolbox.survey import SLATE, pick_filing
+
+            specs: list[EvalSpec] = []
+            for s_entry in SLATE:
+                sub_entry = fetcher.submissions(cik=s_entry.cik)
+                sub_json = json.loads(sub_entry.path.read_text())
+                pick = pick_filing(sub_json, s_entry.target)
+                if pick is None:
+                    continue
+                arc = fetcher.archive(
+                    cik=s_entry.cik,
+                    accession=pick["accession"],
+                    filename=pick["primary_doc"],
+                )
+                year = int(pick["date"][:4])
+                slug = s_entry.name.lower().replace(" ", "_")
+                specs.append(
+                    EvalSpec(
+                        name=f"{s_entry.cik}_{slug}_{year}",
+                        html_path=arc.path,
+                        fiscal_year=year,
+                    )
+                )
+            run_eval(specs, out_dir=Path(args.out))
         else:
             parser.error(f"unknown subcommand {args.cmd!r}")
     finally:
