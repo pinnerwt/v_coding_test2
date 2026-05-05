@@ -1,13 +1,13 @@
 ---
 name: 10k-extraction
-description: Use when the user asks to extract Items 1-16 from a SEC 10-K filing into the Task 3 per-item JSON schema (part, item_number, item_title, content_text, char_range, status), or invokes /10k-extraction. The skill writes a fresh per-filing Python extractor at task3/scripts/extract/<cik>-<accession>.py, runs it, validates the output, and surfaces suspicious results so the next iteration of the skill can address them.
+description: Use when the user asks to extract Items 1-16 from a SEC 10-K filing into the Task 3 per-item JSON schema (part, item_number, item_title, content_text, char_range, status), or invokes /10k-extraction. The skill is now a thin shim over `task3/src/extract_agent/` — it resolves identifiers, runs the agent CLI, and surfaces validation findings. Per-filing scripts under `task3/scripts/extract_legacy/` remain available as a fallback when the agent's hybrid tools cannot fit a filing's structure.
 ---
 
 # 10k-extraction
 
-For each new 10-K document, **author a fresh Python extractor tailored to that filing**, run it, and emit the per-item JSON schema. One filing = one script = one JSON.
+For each new 10-K document, **run the extract_agent** to produce the per-item JSON schema. One filing = one agent run = one JSON.
 
-This is deliberate: 10-K HTML varies enough (heading casing, page-footer leak, "incorporated by reference" wording, pre-XBRL plain-text tables) that a single universal parser hides failures. Per-filing scripts force engagement with each document and accumulate as a corpus we can later generalise from.
+The agent (`task3/src/extract_agent/`) bundles deterministic backbone (cleaning, anchor finding, slicing, default classification, validation) with a hybrid LLM-driven tool surface (`clean_and_load`, `find_anchors`, `slice_items`, `classify_statuses`, `validate_records`, `write_output`, `done`, plus escape hatches `read_chars`, `regex_search`, `inspect_record`, `update_record`). The LLM diverges from defaults only when the filing demands it. The skill's job is orchestration around the run: identifier resolution, queue tick, validation surfacing, and post-run reflection.
 
 ## Output schema (per item)
 
@@ -32,50 +32,42 @@ If only a company name or year is given (and no row matches), ask once for CIK +
 
 ## Workflow
 
-The skill runs as a chain of phases. Two of them — diagnostics and validation — produce a lot of probe/log output that would pollute main context if read directly; dispatch those to an `Explore` subagent and read only its summary. The authoring and run phases stay in the main thread because they're where judgment lives (which constants to tune, when to apply the anti-benchmaxxing checks at the bottom of this file).
+The skill runs as a chain of phases. Phases 3, 5b, and 6 — diagnostic, status splitting, validation — used to be dispatched to subagents from this thread; they are now implemented inside the agent's tool registry and run as part of the single agent invocation in phase 4. The skill keeps them in the table for orientation: they still exist, just on the other side of the agent boundary.
 
 | Phase | Where it runs | Why |
 |---|---|---|
 | 1. Resolve input | Main thread | Trivial lookup in `task3/data/index.json` |
 | 2. Pick identifiers | Main thread | `<cik>` + `<accession-no-dashes>` (strip dashes) |
-| 3. **Diagnostic pass** | **Explore subagent** | Probes emit ~10KB+ output per filing; main thread only needs the structural summary |
-| 4. Author script | Main thread | Decision-making phase — must see prior conversation, prior filings' scripts, and the anti-benchmaxxing rules |
-| 5. Run script | Main thread | One-line bash; cheap |
-| 5b. **Status splitting** | **Haiku Agent fan-out (parallel)** | One bounded subagent per `extracted` record. Each classifies its body into status spans; main thread merges and rewrites the JSON in place |
-| 6. **Validation pass** | **Explore subagent** | Reads the full JSON + runs `_validate.py`; main thread only needs the grouped findings |
-| 7. Report | Main thread | Synthesizes the diagnostic summary, the run output, and the validation findings into the user-facing reply |
+| 3. Diagnostic pass | **Inside the agent** (`clean_and_load`, `find_anchors`, `regex_search`, `read_chars`) | The agent probes the cleaned text via its own tools rather than dispatching an external subagent |
+| 4. **Run agent** | Main thread | One-line bash; the agent CLI runs the full extraction (clean → anchor → slice → classify → status-split → validate → write) and exits |
+| 5b. Status splitting | **Inside the agent** (`classify_statuses`) | The agent calls a Haiku-class classifier on eligible bodies and merges segments deterministically — no main-thread fan-out |
+| 6. Validation pass | **Inside the agent** (`validate_records`) | The agent runs the validator before `write_output`/`done`; findings surface in the agent's stdout |
+| 7. Report | Main thread | Synthesizes the agent's stdout (per-item summary + findings) into the user-facing reply |
 | 8. Tick queue | Main thread | If the inputs came from `test_source.md` (or the row is identifiable by CIK + accession), flip that row's `[ ]` to `[x]` via a single `Edit` call. Skip if no matching row exists. Do this AFTER Phase 7 so the tick reflects a completed report, not a half-finished run. |
+| 9. Post-run reflection | Main thread | See "Post-run reflection" at the bottom of this file |
 
-**Run command** (phase 5):
+**Run command** (phase 4):
 ```bash
-cd task3 && uv run python scripts/extract/<cik>-<accession>.py \
-    <html_path> --out data/extracted/<cik>-<accession>.json
+cd task3 && uv run python -m extract_agent --cik <cik> --accession <accession-no-dashes> \
+    --out data/extracted/<cik>-<accession>.json
 ```
 
-**When NOT to delegate** (authoring, phase 4): a subagent doesn't see the conversation history. It can't tell whether a quirk in this filing is genuinely new or the third time we've seen JPM-style cross-refs, and it won't apply the "How to edit this skill" discipline at the bottom of this file when deciding whether to add a constant to the per-filing script vs. promote it. Keep authoring in the main thread.
-
-If validation flags issues, do **not** silently retry — report the issues with the script path so the next iteration can edit it.
+If validation flags issues, do **not** silently retry — report the issues with the agent invocation so the next iteration can adjust the agent (or fall back to a legacy per-filing script — see "Falling back to a legacy per-filing script" below).
 
 Final reply to user: JSON path + a one-line-per-item summary (`Part {p} Item {n} [{status}] -- {title} ({len content_text} chars)`) + a `Findings` section with whatever the validation subagent surfaced.
 
-### Phase 3 dispatch (Diagnostic pass — Explore subagent)
+### Phase 3, 5b, 6 — implemented inside the agent
 
-The phase file `.claude/skills/10k-extraction/phase3-diagnostic.md` is the entire context the subagent needs. Dispatch with a prompt of the form:
+Phases 3, 5b, and 6 are **implemented inside the agent — see `task3/src/extract_agent/tools/`**. The skill no longer dispatches subagents for them.
 
-```
-Read .claude/skills/10k-extraction/phase3-diagnostic.md and follow it.
+- **Phase 3 (Diagnostic)** — the agent probes the cleaned text via `task3/src/extract_agent/tools/find_anchors.py`, `task3/src/extract_agent/tools/regex_search.py`, and `task3/src/extract_agent/tools/read_chars.py` (after `task3/src/extract_agent/tools/clean_and_load.py`). It decides per-filing whether the defaults suffice or whether to diverge.
+- **Phase 6 (Validation)** — `task3/src/extract_agent/tools/validate_records.py` runs the same mechanical checks (status sanity, char_range monotonicity, gaps > 2000, page-footer leak, duplicate item records) before `write_output`/`done`. Findings appear in the agent's stdout under a `Findings` heading; surface them verbatim in the user-facing reply.
 
-Inputs:
-  html_path: <absolute path under task3/data/raw/archive/...>
-  cik:       <cik>
-  accession: <accession-no-dashes>
-```
+### Phase 5b — status splitting inside the agent
 
-The subagent returns a ≤200-word structural summary. Use it to inform Phase 4 (authoring).
+Status splitting is implemented inside `task3/src/extract_agent/tools/classify_statuses.py`, which calls a Haiku-class classifier per eligible record and merges segments deterministically (the merge logic is `task3/src/extract_agent/merge_5b.py`, the same module the legacy fan-out used). The agent does the eligibility filter, the fan-out, and the merge; this thread does not.
 
-### Phase 5b dispatch (Status splitting — Haiku Agent fan-out)
-
-After the per-filing script writes the JSON, the main thread re-reads it and dispatches one Haiku Agent per `extracted` record to detect mixed-status content (substantive disclosure interleaved with explicit "incorporated by reference" sentences). The phase file `.claude/skills/10k-extraction/phase5b-status-split.md` is the entire context each subagent needs.
+The eligibility filter prose below is preserved verbatim because it is load-bearing if anyone consults `phase5b-status-split.md` or `task3/src/extract_agent/tools/classify_statuses.py`:
 
 **Eligibility filter** — only fan out for records where ALL of:
 - `status == "extracted"` (other statuses are mechanical and unambiguous);
@@ -83,51 +75,9 @@ After the per-filing script writes the JSON, the main thread re-reads it and dis
 - `not (item_number == "15" and len(content_text) >= 500_000)` (Item 15 EOF run-on contains financial statements + glossary + auditor reports, not item content; sub-classifying that would dominate cost without honoring the schema's intent);
 - `re.search(r"incorporat\w*(?:\s+\w+){0,8}\s+by\s+reference", content_text, re.IGNORECASE)` matches at least once. Without this anchor phrase there is no plausible IBR sentence in the body, so Phase 5b has nothing to find — the call is guaranteed to return one full-body `extracted` segment. Cost asymmetry is what justifies the gate: a false negative here silently drops a real IBR (expensive); a false positive just dispatches a Haiku call that returns the no-op single segment (cheap). The `{0,8}` window keeps `"incorporated **herein** by reference to"`, `"incorporated, by reference,"`, `"is hereby incorporated by reference"` and similar variants in scope. Do **not** try to also exclude negation (`"not incorporated by reference"`) or table-header occurrences here — let those pass through; precision lives in Phase 5b itself, the pre-filter is recall-only. Empirically (Berkshire 2025, MSFT FY2020) ~80% of `extracted` records contain no IBR phrase at all and skip the dispatch with no quality loss.
 
-**Dispatch pattern** — fan out in parallel: one Claude Code Agent tool call per eligible record, all in a single assistant message (per `superpowers:dispatching-parallel-agents`). Use `model: "haiku"` and `subagent_type: "general-purpose"`. Each prompt has the form:
+## Authoring guidance (the agent's deterministic defaults)
 
-```
-Read .claude/skills/10k-extraction/phase5b-status-split.md and follow it.
-
-Inputs:
-  item_number: <e.g. "10">
-  item_title:  <e.g. "Directors, Executive Officers and Corporate Governance">
-  body:
-"""
-<full content_text for this record>
-"""
-
-Return ONLY the JSON object specified in the phase file. No prose.
-```
-
-**Merge** — the subagent returns *segments* (snippet-anchored), not character offsets. The phase file forbids it from computing offsets directly because token-models cannot count characters reliably (this was discovered in the JPM 2025 GREEN test where Haiku reported a body length of 2272 vs the true 3923). The merge logic is implemented in `task3/scripts/extract/_merge_5b.py` (function `merge_records(records, results)` for in-process use, or CLI `uv run python scripts/extract/_merge_5b.py <json_path> <segments_path>` where segments_path is `{record_index: [segments]}` JSON). Do not re-implement the merge in `/tmp` per filing — call the shared module. The merge logic itself is:
-1. Parse the JSON; reject (and keep the parent record unchanged) if `segments` is missing/malformed or contains unknown statuses.
-2. For each segment, locate `starts_with` in the parent body via `body.find()`. Reject if missing OR appears more than once (ambiguous). The segment's `body_start` is `body.find(starts_with)`. The segment's `body_end` is the **next segment's `body_start`** (or `len(body)` for the last segment). This means inter-sentence whitespace between segments is absorbed into the prior segment — a deliberate choice, because IBR sentences typically end with `". "` or `".\n\n"` and asking the subagent to choose which side of the whitespace owns the byte is brittle (Haiku will pick differently across runs and miss by 1–2 chars). **Do NOT reject on `ends_with` mismatch.** `ends_with` is never load-bearing for boundary computation — `body_end` derives entirely from the next segment's `body_start` (or `len(body)`), so even a hallucinated `ends_with` doesn't corrupt offsets. Token-models routinely emit non-verbatim trailing snippets — they may stitch together text from non-adjacent sentences when the body contains near-duplicate phrases — and strict validation throws away otherwise-correct `starts_with` + `status` triples for nothing. Use `ends_with` only as soft signal for human review, not as a rejection gate. **Quote-fold both sides before matching `starts_with`.** Modern 10-Ks render typographic punctuation (U+2018/U+2019 `'`/`'`, U+201C/U+201D `"`/`"`, U+2013/U+2014 `–`/`—`) but Haiku consistently emits the ASCII equivalents, so verbatim `body.find(snippet)` returns 0x for almost every segment unless both strings are normalised. Apply a position-preserving `str.translate` mapping curly→ASCII (each replacement is 1-char→1-char so offsets in the folded string match offsets in the original) to both the body and the snippet for `find`/`count`; slice `content_text` from the un-folded original. This is structural, not a token rule — every modern filing trips it; do not gate on filer.
-3. Validate the resulting spans: monotonic starts, adjacent statuses differ. **If `segments[0].body_start > 0`** (the subagent skipped past residue at the head — observed on Haiku when the body opens with content from an adjacent section, e.g. GE 2018 Item 3 opens with Risk Factors residue from page 86), auto-prepend an `extracted` segment covering `[0, segments[0].body_start)` rather than rejecting the whole split. The prose rule "segment[0] must anchor at body[0]" is correct guidance for the subagent but is not load-bearing on Haiku in practice; the merge code is the load-bearing fix. If two adjacent segments collapse to the same status after prepending, merge them.
-4. Convert each span to absolute by adding the parent's `char_range[0]`.
-5. Replace the parent record with one new record per segment — same `part`, `item_number`, `item_title`; `content_text` sliced from the parent's body using `body_start`/`body_end`; `char_range` absolute; `status` from the segment.
-6. If the subagent returned a single segment covering the whole body with `status == "extracted"` (the common case), this is a no-op.
-
-**Write back** — re-write `task3/data/extracted/<cik>-<accession>.json` with the merged records, sorted by `char_range[0]`. Phase 6 then validates the rewritten file.
-
-**Cost note** — every `extracted` body above the 200-char floor gets a Haiku call. For a typical 23-item filing, that's ~10–15 calls per filing; for very large bodies (Item 1A at 100KB+, Item 8 at 60KB+) the input cost dominates. Always-on by user decision; do not gate on signal regex.
-
-### Phase 6 dispatch (Validation pass — Explore subagent)
-
-The phase file `.claude/skills/10k-extraction/phase6-validation.md` is the entire context the subagent needs. Dispatch with a prompt of the form:
-
-```
-Read .claude/skills/10k-extraction/phase6-validation.md and follow it.
-
-Inputs:
-  json_path:   task3/data/extracted/<cik>-<accession>.json
-  script_path: task3/scripts/extract/<cik>-<accession>.py
-```
-
-The subagent returns a ≤150-word findings list (Errors / Warnings / OK). Surface this verbatim in the user-facing reply under a `Findings` heading.
-
-## Authoring guidance (what the per-filing script must do)
-
-The backbone is the same across filings. The per-filing tweaks live in the regexes and the cleaner — informed by the diagnostic pass.
+These are the agent's deterministic defaults (encoded in `task3/src/extract_agent/cleaner.py`, `task3/src/extract_agent/anchors.py`, `task3/src/extract_agent/slicer.py`, `task3/src/extract_agent/default_classify.py`, and `task3/src/extract_agent/validate.py`). They survive the migration; the agent's hybrid-tool surface lets the LLM diverge from them only when the filing demands it. Read this section to understand what the agent does by default and why.
 
 1. **HTML → cleaned plain text** — `clean_html(raw) -> str`:
    - Strip `<script>`, `<style>`, `<head>`, `<noscript>` content entirely.
@@ -190,7 +140,11 @@ The backbone is the same across filings. The per-filing tweaks live in the regex
 
 7. **CLI contract**: `argparse` with positional `html_path`, `--out` required. Write the JSON array to `--out`. Stdout MUST be the per-item summary the user-facing reply needs — one line per item in the form `Part {p} Item {n} [{status}] -- {title} ({len content_text} chars)`, followed by a final `items={n} parts={[...]}` line. The main thread captures this stdout directly for Phase 7; producing the summary inside the script eliminates a redundant JSON re-read round trip per filing.
 
-The skill does not ship a single template; if a previous filing's script is a good starting point, the skill may copy it to the new path and adapt — but the resulting script must still be specific to the new filing (tuned regex, tuned cleaner where needed) and committed alongside its output JSON.
+The agent's tool surface (`clean_and_load`, `find_anchors`, `slice_items`, `classify_statuses`, `validate_records`, `write_output`, `done`, plus escape hatches `read_chars`, `regex_search`, `inspect_record`, `update_record`) lets the LLM diverge from these defaults when the filing demands it — e.g. tightening the cleaner for an unusual XBRL container, or overriding a single record via `update_record` after `inspect_record` reveals a bad slice.
+
+## Falling back to a legacy per-filing script
+
+If the agent fails repeatedly on a filing whose structural pattern doesn't fit the hybrid tools (the canonical case is GE 2018: no `Item N.` body anchors, all items live in an end-of-doc cross-reference index), it is still acceptable to copy one of the frozen scripts from `task3/scripts/extract_legacy/` as a starting point and adapt it. The output schema is unchanged. Surface the fallback in the user-facing reply so the next iteration knows not to retry the agent on this filing.
 
 ## Failure modes and how the design rules out each one
 
@@ -210,11 +164,11 @@ The design choices above each defend against a specific failure mode observed in
 | `incorporated herein by reference` not classified | Items 10–14 tagged `extracted` with ~150-char proxy-statement body | `incorporat\w*(?:\s+\w+){0,5}\s+by\s+reference` |
 | Page-footer leak into short Items | `Item 4 [not_applicable]` body = `"Not applicable.\n\nApple Inc. \| 2023 Form 10-K \| 17"` | Strip footer pattern in cleaner OR trim post-extract |
 | Inline-XBRL `<ix:hidden>` text appearing in cleaned output | Garbage numeric tokens at the top of the cleaned text; offsets shifted | Cleaner strips `<ix:header>` / `<ix:hidden>` |
-| Body has no "Item N." anchors at all (older or non-standard filings, e.g. GE 2018) — the only `Item N.` text lives in a single end-of-doc cross-reference index with **non-contiguous** page-range pointers (`Item 1.\nBusiness\n4-5, 12-35, 43-44`); body uses page-numbered narrative without item-anchored headings | All items extracted with 1-17 char bodies (sliced between adjacent TOC entries), every item flagged "largest occurrence < 50 chars" | Out of reach of pure regex anchors. Realized approach in `task3/scripts/extract/40545-000004054519000014.py` (GE 2018): parse the `FORM 10-K CROSS REFERENCE INDEX` table to obtain `(item, page_spec)`, build `page_number → (start, end)` from a recurring page-footer regex (e.g. `r"GE 2018 FORM 10-K\s+(\d+)"`), then slice each item's longest contiguous page range. Multi-range items legitimately overlap (Item 1 ⊂ Item 7 in GE 2018); validator monotonicity warnings are expected, not bugs. Items with page spec "Not applicable" → `not_applicable`; with proxy footnote markers `(a)/(b)/(c)/(d)` only → `incorporated_by_reference`. **Stays N=1 / per-filing** — do not lift the page-footer regex or cross-reference parsing into SKILL.md until a second filing demonstrates the same pattern with a different vendor token |
+| Body has no "Item N." anchors at all (older or non-standard filings, e.g. GE 2018) — the only `Item N.` text lives in a single end-of-doc cross-reference index with **non-contiguous** page-range pointers (`Item 1.\nBusiness\n4-5, 12-35, 43-44`); body uses page-numbered narrative without item-anchored headings | All items extracted with 1-17 char bodies (sliced between adjacent TOC entries), every item flagged "largest occurrence < 50 chars" | Out of reach of pure regex anchors. Realized approach in `task3/scripts/extract_legacy/40545-000004054519000014.py` (GE 2018): parse the `FORM 10-K CROSS REFERENCE INDEX` table to obtain `(item, page_spec)`, build `page_number → (start, end)` from a recurring page-footer regex (e.g. `r"GE 2018 FORM 10-K\s+(\d+)"`), then slice each item's longest contiguous page range. Multi-range items legitimately overlap (Item 1 ⊂ Item 7 in GE 2018); validator monotonicity warnings are expected, not bugs. Items with page spec "Not applicable" → `not_applicable`; with proxy footnote markers `(a)/(b)/(c)/(d)` only → `incorporated_by_reference`. **Stays N=1 / per-filing** — do not lift the page-footer regex or cross-reference parsing into SKILL.md until a second filing demonstrates the same pattern with a different vendor token. This is the canonical "fall back to a legacy per-filing script" case (see section above). |
 
 ## Validation
 
-The validation pass lives in `.claude/skills/10k-extraction/phase6-validation.md` (dispatched per Phase 6 above). The mechanical checks (status sanity, char_range monotonicity, gaps > 2000, page-footer leak, duplicate item records) live in `task3/scripts/extract/_validate.py` — the source of truth. Surface the subagent's findings verbatim under a `Findings` heading in the user reply; those are the loop closure points that tell us what to tune in the next per-filing script.
+Validation runs inside the agent via `task3/src/extract_agent/tools/validate_records.py` (which delegates to `task3/src/extract_agent/validate.py` — the source of truth for the mechanical checks: status sanity, char_range monotonicity, gaps > 2000, page-footer leak, duplicate item records). Findings appear in the agent's stdout; surface them verbatim under a `Findings` heading in the user reply. Those are the loop closure points that tell us what to tune in the agent (or what justifies a legacy fallback).
 
 ## How to edit this skill (anti-benchmaxxing)
 
@@ -234,10 +188,9 @@ When a per-filing extraction surfaces a new trait, the temptation is to lift the
 ## Quick reference
 
 ```bash
-# typical end-to-end (after the per-filing script is authored)
+# typical end-to-end
 cd task3
-uv run python scripts/extract/320193-000032019323000106.py \
-    data/raw/archive/320193/000032019323000106/aapl-20230930.htm \
+uv run python -m extract_agent --cik 320193 --accession 000032019323000106 \
     --out data/extracted/320193-000032019323000106.json
 ```
 
