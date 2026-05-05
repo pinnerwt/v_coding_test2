@@ -197,3 +197,64 @@ async def test_loop_dispatcher_returns_error_dict_when_tool_raises(tmp_path: Pat
     assert len(tool_msgs) == 1
     payload = _json.loads(tool_msgs[0]["content"])
     assert "error" in payload
+
+
+@pytest.mark.asyncio
+async def test_loop_unknown_tool_name_does_not_crash(tmp_path: Path):
+    """If the big model hallucinates a tool name that isn't in the registry,
+    the dispatcher must return an error dict and the loop must continue."""
+    html = tmp_path / "f.html"
+    html.write_text("<p>x</p>")
+    out = tmp_path / "out.json"
+    scripted = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "1",
+                    "type": "function",
+                    "function": {"name": "no_such_tool", "arguments": "{}"},
+                }
+            ],
+        },
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "2",
+                    "type": "function",
+                    "function": {"name": "done", "arguments": "{}"},
+                }
+            ],
+        },
+    ]
+    cfg = Config.from_env()
+    big = StubLLM(scripted)
+    small = StubLLM([])
+    result = await run_loop(html_path=str(html), out_path=str(out), cfg=cfg, big=big, small=small)
+    assert result["status"] == "done"
+    import json as _json
+
+    tool_msgs = [
+        m for m in result["messages"] if m.get("role") == "tool" and m.get("tool_call_id") == "1"
+    ]
+    assert len(tool_msgs) == 1
+    payload = _json.loads(tool_msgs[0]["content"])
+    assert "error" in payload
+    assert "unknown tool" in payload["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_loop_rejects_unknown_model_for_pricing(tmp_path: Path):
+    """If cfg.big_model isn't in _PRICES, run_loop must fail fast — otherwise
+    the cost ceiling silently never trips."""
+    html = tmp_path / "f.html"
+    html.write_text("<p>x</p>")
+    out = tmp_path / "out.json"
+    cfg = replace(Config.from_env(), big_model="bogus-model")
+    big = StubLLM([])
+    small = StubLLM([])
+    with pytest.raises(ValueError, match="unknown model for pricing"):
+        await run_loop(
+            html_path=str(html), out_path=str(out), cfg=cfg, big=big, small=small
+        )

@@ -27,13 +27,15 @@ def _estimate_cost(usage: dict | None, model: str) -> float:
 
 
 async def _dispatch_tool(name: str, args: dict, state: SessionState, *, small, cfg: Config) -> dict:
-    mod = tools.REGISTRY[name]
     try:
+        mod = tools.REGISTRY[name]
         if inspect.iscoroutinefunction(mod.run):
             # Tools whose run is async (only classify_statuses today) take
             # client/model kwargs.
             return await mod.run(state, args, client=small, model=cfg.small_model)
         return mod.run(state, args)
+    except KeyError:
+        return {"error": f"unknown tool: {name}"}
     except Exception as e:  # noqa: BLE001 — convert to error-dict so loop continues
         return {"error": f"{type(e).__name__}: {e}"}
 
@@ -46,6 +48,10 @@ async def run_loop(
     big,
     small,
 ) -> dict[str, Any]:
+    for model_name in (cfg.big_model, cfg.small_model):
+        if model_name not in _PRICES:
+            raise ValueError(f"unknown model for pricing: {model_name}")
+
     state = SessionState()
     state.inputs = {"html_path": html_path, "out_path": out_path}
 
@@ -84,11 +90,26 @@ async def run_loop(
             continue
 
         for tc in tool_calls:
-            name = tc["function"]["name"]
+            name = ""
             try:
-                args = (
-                    json.loads(tc["function"]["arguments"]) if tc["function"]["arguments"] else {}
+                name = tc["function"]["name"]
+                raw_args = tc["function"]["arguments"]
+                tool_call_id = tc["id"]
+            except KeyError as e:
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", ""),
+                        "content": json.dumps(
+                            {"error": f"malformed tool_call: KeyError({e})"},
+                            ensure_ascii=False,
+                        ),
+                    }
                 )
+                continue
+
+            try:
+                args = json.loads(raw_args) if raw_args else {}
             except json.JSONDecodeError as e:
                 result: dict = {"error": f"bad tool arguments JSON: {e}"}
             else:
@@ -97,7 +118,7 @@ async def run_loop(
             messages.append(
                 {
                     "role": "tool",
-                    "tool_call_id": tc["id"],
+                    "tool_call_id": tool_call_id,
                     "content": json.dumps(result, ensure_ascii=False),
                 }
             )
