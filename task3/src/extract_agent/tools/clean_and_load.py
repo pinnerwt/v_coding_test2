@@ -9,10 +9,7 @@ SCHEMA = {
         "description": (
             "Read an HTML 10-K from disk, clean it to plain text, and store the text "
             "in session state. Returns a text_id that downstream tools (find_anchors, "
-            "slice_items, read_chars) use to refer to this cleaned text. Also returns "
-            "`head_preview` (first 2000 chars) and `tail_preview` (last 2000 chars) — "
-            "scan these BEFORE calling find_anchors to detect tail cross-reference "
-            "indexes (a common source of bogus anchor clusters near document end)."
+            "slice_items, read_chars) use to refer to this cleaned text."
         ),
         "parameters": {
             "type": "object",
@@ -37,17 +34,8 @@ SCHEMA = {
 }
 
 
-_PREVIEW_CAP = 2000
-
-
 def run(state, args: dict) -> dict:
     raw = Path(args["html_path"]).read_text(encoding="utf-8", errors="replace")
     text = clean_html(raw, extra_strip_patterns=args.get("extra_strip_patterns"))
     text_id = state.store_text(text)
-    return {
-        "text_id": text_id,
-        "length": len(text),
-        "n_lines": text.count("\n") + 1,
-        "head_preview": text[:_PREVIEW_CAP],
-        "tail_preview": text[-_PREVIEW_CAP:],
-    }
+    return {"text_id": text_id, "length": len(text), "n_lines": text.count("\n") + 1}
