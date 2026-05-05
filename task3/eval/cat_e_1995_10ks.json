@@ -1,0 +1,23 @@
+[
+  {
+    "label": "IBM 1995",
+    "cik": "51143",
+    "accession": "0000950112-95-000774",
+    "filename": "0000950112-95-000774.txt",
+    "why_hard": "Plain-text SGML complete-submission wrapper (Privacy-Enhanced Message header, <IMS-HEADER>, <DOCUMENT>/<TYPE>/<TEXT>). No HTML block tags — cleaner can't insert paragraph breaks. 1994 fiscal year 10-K filed 1995-03-28."
+  },
+  {
+    "label": "GE 1995",
+    "cik": "40545",
+    "accession": "0000040545-95-000004",
+    "filename": "0000040545-95-000004.txt",
+    "why_hard": "1995 GE 10-K405 plain-text SGML; multi-document submission with concatenated exhibits."
+  },
+  {
+    "label": "Microsoft 1995",
+    "cik": "789019",
+    "accession": "0000891020-95-000433",
+    "filename": "0000891020-95-000433.txt",
+    "why_hard": "FY1995 Microsoft 10-K plain-text SGML, filed 1995-09-25 (June fiscal-year end)."
+  }
+]

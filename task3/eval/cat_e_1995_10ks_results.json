@@ -1,0 +1,171 @@
+[
+  {
+    "label": "IBM 1995",
+    "status": "done",
+    "steps": 17,
+    "cost_usd": 0.0584,
+    "elapsed": 54.8,
+    "n_records": 14,
+    "items": [
+      [
+        "1",
+        "extracted",
+        2040
+      ],
+      [
+        "2",
+        "extracted",
+        1072
+      ],
+      [
+        "3",
+        "incorporated_by_reference",
+        130
+      ],
+      [
+        "4",
+        "not_applicable",
+        25
+      ],
+      [
+        "5",
+        "extracted",
+        684
+      ],
+      [
+        "6",
+        "incorporated_by_reference",
+        104
+      ],
+      [
+        "7",
+        "incorporated_by_reference",
+        132
+      ],
+      [
+        "8",
+        "incorporated_by_reference",
+        204
+      ],
+      [
+        "9",
+        "not_applicable",
+        51
+      ],
+      [
+        "10",
+        "extracted",
+        3436
+      ],
+      [
+        "11",
+        "incorporated_by_reference",
+        131
+      ],
+      [
+        "12",
+        "incorporated_by_reference",
+        525
+      ],
+      [
+        "13",
+        "incorporated_by_reference",
+        148
+      ],
+      [
+        "14",
+        "extracted",
+        308932
+      ]
+    ]
+  },
+  {
+    "label": "GE 1995",
+    "status": "max_steps_exceeded",
+    "steps": 30,
+    "cost_usd": 0.0716,
+    "elapsed": 56.0,
+    "n_records": 0,
+    "items": []
+  },
+  {
+    "label": "Microsoft 1995",
+    "status": "done",
+    "steps": 14,
+    "cost_usd": 0.0387,
+    "elapsed": 33.5,
+    "n_records": 14,
+    "items": [
+      [
+        "1",
+        "extracted",
+        40887
+      ],
+      [
+        "2",
+        "extracted",
+        1671
+      ],
+      [
+        "3",
+        "extracted",
+        52
+      ],
+      [
+        "4",
+        "extracted",
+        6290
+      ],
+      [
+        "5",
+        "extracted",
+        1759
+      ],
+      [
+        "6",
+        "extracted",
+        732
+      ],
+      [
+        "7",
+        "extracted",
+        17327
+      ],
+      [
+        "8",
+        "extracted",
+        758
+      ],
+      [
+        "9",
+        "extracted",
+        27472
+      ],
+      [
+        "10",
+        "incorporated_by_reference",
+        487
+      ],
+      [
+        "11",
+        "incorporated_by_reference",
+        248
+      ],
+      [
+        "12",
+        "incorporated_by_reference",
+        212
+      ],
+      [
+        "13",
+        "incorporated_by_reference",
+        153
+      ],
+      [
+        "14",
+        "extracted",
+        45627
+      ]
+    ]
+  }
+]

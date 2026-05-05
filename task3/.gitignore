@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+data/raw/
+data/index.json
+data/extracted/
+scripts/extract/*-*.py
+scripts/extract_legacy/*-*.py
