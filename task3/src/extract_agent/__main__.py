@@ -88,9 +88,7 @@ def _print_summary(result: dict) -> None:
 
 
 def _exit_code_for(status: str) -> int:
-    if status in ("cost_exceeded", "max_steps_exceeded"):
-        return 1
-    return 0
+    return 0 if status == "done" else 1
 
 
 async def _run_one(html_path: str, out_path: str) -> dict:
@@ -149,7 +147,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    has_pair = bool(args.cik) or bool(args.accession)
+    # Pair check first: catch lone --cik or lone --accession before mode count.
+    if bool(args.cik) ^ bool(args.accession):
+        parser.error("--cik and --accession must be given together")
+
+    has_pair = bool(args.cik) and bool(args.accession)
     has_queue = bool(args.queue)
     has_direct = bool(args.html_path)
 
@@ -160,8 +162,6 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if has_pair:
-        if not (args.cik and args.accession):
-            parser.error("--cik and --accession must be given together")
         if not args.out:
             parser.error("--out is required for --cik/--accession mode")
         html_path = _resolve_html_path(args.cik, args.accession)
