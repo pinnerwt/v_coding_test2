@@ -40,6 +40,7 @@ The skill runs as a chain of phases. Two of them — diagnostics and validation 
 | 3. **Diagnostic pass** | **Explore subagent** | Probes emit ~10KB+ output per filing; main thread only needs the structural summary |
 | 4. Author script | Main thread | Decision-making phase — must see prior conversation, prior filings' scripts, and the anti-benchmaxxing rules |
 | 5. Run script | Main thread | One-line bash; cheap |
+| 5b. **Status splitting** | **Haiku Agent fan-out (parallel)** | One bounded subagent per `extracted` record. Each classifies its body into status spans; main thread merges and rewrites the JSON in place |
 | 6. **Validation pass** | **Explore subagent** | Reads the full JSON + runs `_validate.py`; main thread only needs the grouped findings |
 | 7. Report | Main thread | Synthesizes the diagnostic summary, the run output, and the validation findings into the user-facing reply |
 
@@ -69,6 +70,43 @@ Inputs:
 ```
 
 The subagent returns a ≤200-word structural summary. Use it to inform Phase 4 (authoring).
+
+### Phase 5b dispatch (Status splitting — Haiku Agent fan-out)
+
+After the per-filing script writes the JSON, the main thread re-reads it and dispatches one Haiku Agent per `extracted` record to detect mixed-status content (substantive disclosure interleaved with explicit "incorporated by reference" sentences). The phase file `.claude/skills/10k-extraction/phase5b-status-split.md` is the entire context each subagent needs.
+
+**Eligibility filter** — only fan out for records where ALL of:
+- `status == "extracted"` (other statuses are mechanical and unambiguous);
+- `len(content_text) >= 200` (shorter bodies — `"Refer to Item 10."`, `"Not applicable."` — can't meaningfully split, save the call);
+- `not (item_number == "15" and len(content_text) >= 500_000)` (Item 15 EOF run-on contains financial statements + glossary + auditor reports, not item content; sub-classifying that would dominate cost without honoring the schema's intent).
+
+**Dispatch pattern** — fan out in parallel: one Claude Code Agent tool call per eligible record, all in a single assistant message (per `superpowers:dispatching-parallel-agents`). Use `model: "haiku"` and `subagent_type: "general-purpose"`. Each prompt has the form:
+
+```
+Read .claude/skills/10k-extraction/phase5b-status-split.md and follow it.
+
+Inputs:
+  item_number: <e.g. "10">
+  item_title:  <e.g. "Directors, Executive Officers and Corporate Governance">
+  body:
+"""
+<full content_text for this record>
+"""
+
+Return ONLY the JSON object specified in the phase file. No prose.
+```
+
+**Merge** — the subagent returns *segments* (snippet-anchored), not character offsets. The phase file forbids it from computing offsets directly because token-models cannot count characters reliably (this was discovered in the JPM 2025 GREEN test where Haiku reported a body length of 2272 vs the true 3923). For each subagent return:
+1. Parse the JSON; reject (and keep the parent record unchanged) if `segments` is missing/malformed or contains unknown statuses.
+2. For each segment, locate `starts_with` in the parent body via `body.find()`. Reject if missing OR appears more than once (ambiguous). The segment's `body_start` is `body.find(starts_with)`. The segment's `body_end` is the **next segment's `body_start`** (or `len(body)` for the last segment). This means inter-sentence whitespace between segments is absorbed into the prior segment — a deliberate choice, because IBR sentences typically end with `". "` or `".\n\n"` and asking the subagent to choose which side of the whitespace owns the byte is brittle (Haiku will pick differently across runs and miss by 1–2 chars). Sanity-check `ends_with`: it must occur exactly once in the body, and its match must fall inside `[body_start, body_end)`.
+3. Validate the resulting spans: `segments[0].body_start == 0`, monotonic starts, adjacent statuses differ.
+4. Convert each span to absolute by adding the parent's `char_range[0]`.
+5. Replace the parent record with one new record per segment — same `part`, `item_number`, `item_title`; `content_text` sliced from the parent's body using `body_start`/`body_end`; `char_range` absolute; `status` from the segment.
+6. If the subagent returned a single segment covering the whole body with `status == "extracted"` (the common case), this is a no-op.
+
+**Write back** — re-write `task3/data/extracted/<cik>-<accession>.json` with the merged records, sorted by `char_range[0]`. Phase 6 then validates the rewritten file.
+
+**Cost note** — every `extracted` body above the 200-char floor gets a Haiku call. For a typical 23-item filing, that's ~10–15 calls per filing; for very large bodies (Item 1A at 100KB+, Item 8 at 60KB+) the input cost dominates. Always-on by user decision; do not gate on signal regex.
 
 ### Phase 6 dispatch (Validation pass — Explore subagent)
 
@@ -147,7 +185,7 @@ The backbone is the same across filings. The per-filing tweaks live in the regex
 
    **Don't transitively classify `incorporated_by_reference`.** A body that says `"Refer to Item 10."`, `"Refer to Note 30"`, or `"Refer to pages 165–314."` is an *internal* cross-reference within the same 10-K. The substantive content lives elsewhere in the document, not in another SEC filing. These stay `extracted` (the body is what it literally is — short, but extracted faithfully). Only the explicit "incorporated … by reference" phrasing triggers IBR. Reasoning: the status field has to be mechanical to be auditable; once it interprets cross-references transitively, two readers will disagree about edge cases (Item 10 itself often half-points to the proxy and half-prints the executive officers list, so "Items 11–14 are IBR via Item 10" is itself ambiguous).
 
-7. **CLI contract**: `argparse` with positional `html_path`, `--out` required. Write the JSON array to `--out`; print a short summary to stdout (item count, parts seen).
+7. **CLI contract**: `argparse` with positional `html_path`, `--out` required. Write the JSON array to `--out`. Stdout MUST be the per-item summary the user-facing reply needs — one line per item in the form `Part {p} Item {n} [{status}] -- {title} ({len content_text} chars)`, followed by a final `items={n} parts={[...]}` line. The main thread captures this stdout directly for Phase 7; producing the summary inside the script eliminates a redundant JSON re-read round trip per filing.
 
 The skill does not ship a single template; if a previous filing's script is a good starting point, the skill may copy it to the new path and adapt — but the resulting script must still be specific to the new filing (tuned regex, tuned cleaner where needed) and committed alongside its output JSON.
 

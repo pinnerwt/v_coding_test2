@@ -32,7 +32,7 @@ Most extraction bugs come from a small number of structural traits. Spot the tra
    - Numbers > 16 → bogus matches (the script's regex constrains `(\d{1,2})` to `1[0-6]|[1-9]`).
 5. **Page-footer pattern** — `footers` + targeted `find`. Look for company name + "Form 10-K" + page number patterns (e.g. `Apple Inc. | 2023 Form 10-K | 16`, `Coupang, Inc.\n\n2023 Form 10-K\n\n41`). Report a regex if a recurring pattern is present.
 6. **Last item present** — `find` for `Item 15` and `Item 16`. Many filings end at Item 15 with no Item 16. Item 15 then has no terminator heading and the slice runs to EOF, sweeping in financial statements + glossary + auditor reports. This is expected and gets surfaced as a finding, not fixed.
-7. **TOC region size** — eyeball where the TOC anchors cluster vs. where body anchors start (typically TOC ends in the first 5–8KB). The script uses this constant to drop TOC stubs during dedup.
+7. **TOC region size** — from `items`, read the **cleaned-text offset** of the last TOC-cluster anchor and the first body anchor (the gap between them is usually obvious — TOC anchors are spaced tens to a few hundred chars apart, then there's a jump of ≥1 KB to the first body anchor). Report both numbers verbatim. The main thread sets `TOC_REGION_END` to a value between them. **Always cleaned-text offsets, never raw-HTML byte positions** — every probe in `_probe.py` operates on the cleaned text, so all offsets you report come from there.
 
 ## Probes NOT to run
 
@@ -44,7 +44,8 @@ Most extraction bugs come from a small number of structural traits. Spot the tra
 ```
 - inline-xbrl: yes|no
 - heading style: ALL CAPS | Mixed Case | other
-- TOC region ends ~<offset>
+- TOC last anchor (cleaned-text offset): <int>
+- first body anchor (cleaned-text offset): <int>
 - PART anchor count: <n>  (if > ~5, note "running headers")
 - ITEM anchor count: <n>  (TOC + body, before dedup)
 - page-footer pattern: <regex if present, else "none observed">

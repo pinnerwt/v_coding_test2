@@ -10,10 +10,16 @@ Subcommands:
                                  (head/tail) plus char_range and status. Useful
                                  for diagnosing a flag from `validate`.
   report   <json>                Convenience: validate + summary on one file.
+  compare-golden <actual> <golden>
+                                 Diff actual JSON's per-item span layout against
+                                 a hand-labelled golden (task3/eval/*.golden.json).
+                                 Used to test Phase 5b status-splitting output.
 
-This replaces the ad-hoc `uv run python -c "..."` calls the skill used to need
-mid-loop. Add a check here when a new failure mode is discovered, so the next
-filing's run picks it up automatically.
+Multi-record-per-item is allowed when a single Item is split into adjacent
+sub-records of differing status (e.g. JPM Item 10 = inline executive officers
+[extracted] + IBR sentence + Code of Conduct [extracted]). The duplicates check
+only fires on records whose char_range overlap, which would indicate the
+extractor failed to drop a TOC stub.
 """
 
 from __future__ import annotations
@@ -47,17 +53,27 @@ ITEM_ORDER = [
 def validate(items: list[dict]) -> list[str]:
     findings: list[str] = []
 
-    # One record per item_number after dedup; duplicates here mean the extractor
-    # forgot to drop TOC stubs.
-    seen: set[str] = set()
-    duplicates: list[str] = []
+    # Multiple records per item are legal when they're adjacent sub-records from
+    # Phase 5b status-splitting. Overlapping char_range with the same item_number
+    # is still an error — that indicates the rule extractor failed to drop a TOC
+    # stub (or a sub-record was emitted with the wrong bounds).
+    by_num: dict[str, list[dict]] = defaultdict(list)
     for it in items:
-        n = it["item_number"]
-        if n in seen:
-            duplicates.append(n)
-        seen.add(n)
-    if duplicates:
-        findings.append(f"duplicate item records (TOC stubs not dropped?): {sorted(set(duplicates))}")
+        by_num[it["item_number"]].append(it)
+    seen = set(by_num.keys())
+    overlaps: list[str] = []
+    for num, group in by_num.items():
+        if len(group) < 2:
+            continue
+        ranges = sorted((it["char_range"][0], it["char_range"][1]) for it in group)
+        for (s1, e1), (s2, e2) in zip(ranges, ranges[1:]):
+            if s2 < e1:
+                overlaps.append(num)
+                break
+    if overlaps:
+        findings.append(
+            f"overlapping records for same item (TOC stub not dropped?): {sorted(set(overlaps))}"
+        )
 
     missing_items = sorted(EXPECTED_ITEMS - seen)
     if missing_items:
@@ -136,23 +152,15 @@ def validate(items: list[dict]) -> list[str]:
 
 
 def summary_lines(items: list[dict]) -> list[str]:
-    """One line per item_number, longest-occurrence record."""
-    by_item: dict[str, list[dict]] = defaultdict(list)
-    for it in items:
-        by_item[it["item_number"]].append(it)
-
-    def order_key(num: str) -> tuple[int, str]:
-        try:
-            return (ITEM_ORDER.index(num), "")
-        except ValueError:
-            return (len(ITEM_ORDER), num)
-
+    """One line per record, ordered by char_range. Items split into sub-records
+    by Phase 5b emit multiple consecutive lines sharing the same item_number;
+    each line shows that sub-record's status and length."""
     out = []
-    for num in sorted(by_item, key=order_key):
-        big = max(by_item[num], key=lambda it: len(it["content_text"]))
-        title = big["item_title"]
+    for it in sorted(items, key=lambda r: r["char_range"][0]):
+        title = it["item_title"]
         out.append(
-            f"Part {big['part']} Item {num} [{big['status']}] -- {title} ({len(big['content_text'])} chars)"
+            f"Part {it['part']} Item {it['item_number']} [{it['status']}] "
+            f"-- {title} ({len(it['content_text'])} chars)"
         )
     return out
 
@@ -171,6 +179,66 @@ def inspect_item(items: list[dict], item_number: str, head: int, tail: int) -> s
     if len(body) > head + tail:
         out.append(f"  tail ({tail}c): {body[-tail:]!r}")
     return "\n".join(out)
+
+
+def compare_golden(actual: list[dict], golden: dict) -> list[str]:
+    """Compare actual JSON's per-item span layout against a hand-labelled golden.
+
+    Golden schema (per item entry):
+      item_number: str
+      expected_spans: list of {body_start, body_end, status}, body-relative
+                      offsets within the rule-extracted item's content_text.
+
+    Actual sub-records' bounds are converted back to body-relative by
+    subtracting the per-item parent envelope start (= min char_range[0] across
+    all sub-records of that item_number). Tolerance for boundary drift is
+    `boundary_tolerance_chars` (default 20) — any sub-record boundary within
+    that window of an expected boundary counts as a match.
+    """
+    findings: list[str] = []
+    tol = int(golden.get("boundary_tolerance_chars", 20))
+
+    by_num: dict[str, list[dict]] = defaultdict(list)
+    for it in actual:
+        by_num[it["item_number"]].append(it)
+
+    for entry in golden.get("items", []):
+        num = entry["item_number"]
+        expected = entry["expected_spans"]
+        if num not in by_num:
+            findings.append(f"Item {num}: missing from actual JSON")
+            continue
+        subs = sorted(by_num[num], key=lambda it: it["char_range"][0])
+        envelope_start = subs[0]["char_range"][0]
+        actual_spans = [
+            {
+                "body_start": it["char_range"][0] - envelope_start,
+                "body_end": it["char_range"][1] - envelope_start,
+                "status": it["status"],
+            }
+            for it in subs
+        ]
+        if len(actual_spans) != len(expected):
+            findings.append(
+                f"Item {num}: expected {len(expected)} sub-record(s), got {len(actual_spans)}"
+            )
+            findings.append(f"  expected: {[(s['body_start'], s['body_end'], s['status']) for s in expected]}")
+            findings.append(f"  actual:   {[(s['body_start'], s['body_end'], s['status']) for s in actual_spans]}")
+            continue
+        for i, (exp, act) in enumerate(zip(expected, actual_spans)):
+            if exp["status"] != act["status"]:
+                findings.append(
+                    f"Item {num} span[{i}]: expected status={exp['status']!r}, got {act['status']!r}"
+                )
+            if abs(exp["body_start"] - act["body_start"]) > tol:
+                findings.append(
+                    f"Item {num} span[{i}]: body_start drift {act['body_start']} vs expected {exp['body_start']} (tol={tol})"
+                )
+            if abs(exp["body_end"] - act["body_end"]) > tol:
+                findings.append(
+                    f"Item {num} span[{i}]: body_end drift {act['body_end']} vs expected {exp['body_end']} (tol={tol})"
+                )
+    return findings
 
 
 def _print_findings(path: Path, items: list[dict], findings: list[str]) -> None:
@@ -207,6 +275,13 @@ def main() -> None:
 
     p = sub.add_parser("report", help="validate + summary on one file.")
     p.add_argument("path", type=Path)
+
+    p = sub.add_parser(
+        "compare-golden",
+        help="Diff actual JSON against a hand-labelled golden span layout.",
+    )
+    p.add_argument("actual", type=Path)
+    p.add_argument("golden", type=Path)
 
     args = ap.parse_args()
 
@@ -246,6 +321,18 @@ def main() -> None:
         for line in summary_lines(items):
             print(line)
         return
+
+    if args.cmd == "compare-golden":
+        actual = _load(args.actual)
+        golden = json.loads(args.golden.read_text())
+        findings = compare_golden(actual, golden)
+        print(f"\n=== compare-golden: {args.actual.name} vs {args.golden.name} ===")
+        if not findings:
+            print("  GOLDEN MATCH")
+        else:
+            for f in findings:
+                print(f"  - {f}")
+        sys.exit(1 if findings else 0)
 
 
 if __name__ == "__main__":

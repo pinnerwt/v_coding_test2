@@ -1,0 +1,31 @@
+{
+  "_doc": "Hand-labelled status spans for items where Phase 5b is expected to split a single rule-extracted body into multiple sub-records. Items not listed here are expected to remain a single sub-record matching the rule output. body_start/body_end are offsets within the rule-extracted item's content_text.",
+  "_filing": "JPMorgan Chase 10-K, fiscal 2025 (cik=19617, accession=0001628280-26-008131)",
+  "boundary_tolerance_chars": 20,
+  "items": [
+    {
+      "item_number": "10",
+      "item_title": "Directors, Executive Officers and Corporate Governance.",
+      "expected_spans": [
+        {
+          "body_start": 0,
+          "body_end": 2261,
+          "status": "extracted",
+          "note": "executive officers list + family-relationships sentence (substantive disclosure printed inline)"
+        },
+        {
+          "body_start": 2261,
+          "body_end": 2628,
+          "status": "incorporated_by_reference",
+          "note": "single sentence: 'Information to be provided in Items 10, 11, 12, 13 and 14 ... incorporated by reference to the Firm's Definitive Proxy Statement ...'"
+        },
+        {
+          "body_start": 2628,
+          "body_end": 3923,
+          "status": "extracted",
+          "note": "Code of Conduct and Code of Ethics + Insider Trading Policy paragraphs (substantive content printed inline; trailing page-footer leak '37 / Parts III and IV' included as-is)"
+        }
+      ]
+    }
+  ]
+}
