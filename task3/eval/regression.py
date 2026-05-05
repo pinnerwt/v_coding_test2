@@ -39,9 +39,7 @@ def _resolve_html_path(cik: str, accession: str) -> Path:
         if _normalize_accession(e_acc) != target_acc:
             continue
         return DATA_ROOT / entry["path_relative"]
-    raise SystemExit(
-        f"no archive entry in index.json for cik={cik} accession={accession}"
-    )
+    raise SystemExit(f"no archive entry in index.json for cik={cik} accession={accession}")
 
 
 def _hausdorff(a: list[int] | None, b: list[int] | None) -> int | None:
@@ -69,9 +67,7 @@ def _index_by_item(records: list[dict]) -> dict[str, dict]:
     return {str(r.get("item_number")): r for r in records if r.get("item_number")}
 
 
-def _diff_filing(
-    legacy: list[dict], current: list[dict]
-) -> tuple[list[str], list[str]]:
+def _diff_filing(legacy: list[dict], current: list[dict]) -> tuple[list[str], list[str]]:
     """Return (hard_failures, soft_failures) as human-readable strings."""
     hard: list[str] = []
     soft: list[str] = []
@@ -80,9 +76,7 @@ def _diff_filing(
     current_by = _index_by_item(current)
 
     if len(current) != len(legacy):
-        hard.append(
-            f"item count drift: legacy={len(legacy)} current={len(current)}"
-        )
+        hard.append(f"item count drift: legacy={len(legacy)} current={len(current)}")
 
     for item_no, lrec in legacy_by.items():
         crec = current_by.get(item_no)
@@ -92,9 +86,7 @@ def _diff_filing(
         l_status = lrec.get("status")
         c_status = crec.get("status")
         if l_status != c_status:
-            hard.append(
-                f"item {item_no} status flip: legacy={l_status} current={c_status}"
-            )
+            hard.append(f"item {item_no} status flip: legacy={l_status} current={c_status}")
             continue
         l_body = lrec.get("content_text") or ""
         c_body = crec.get("content_text") or ""
@@ -110,9 +102,7 @@ def _diff_filing(
                 f"|Δ|/legacy={ratio:.3f} hausdorff={haus}"
             )
         elif haus is not None and haus > 0:
-            soft.append(
-                f"item {item_no} char_range hausdorff={haus} (body unchanged)"
-            )
+            soft.append(f"item {item_no} char_range hausdorff={haus} (body unchanged)")
 
     for item_no in current_by:
         if item_no not in legacy_by:
@@ -128,9 +118,7 @@ async def _run_agent(html_path: Path, out_path: Path) -> dict:
 
     cfg = Config.from_env()
     big = LLMClient(base_url=cfg.base_url, model=cfg.big_model, api_key=cfg.api_key)
-    small = LLMClient(
-        base_url=cfg.base_url, model=cfg.small_model, api_key=cfg.api_key
-    )
+    small = LLMClient(base_url=cfg.base_url, model=cfg.small_model, api_key=cfg.api_key)
     try:
         return await run_loop(
             html_path=str(html_path),
@@ -144,9 +132,7 @@ async def _run_agent(html_path: Path, out_path: Path) -> dict:
         await small.aclose()
 
 
-def _evaluate_one(
-    cik: str, accession: str, legacy_path: Path
-) -> tuple[str, list[str], list[str]]:
+def _evaluate_one(cik: str, accession: str, legacy_path: Path) -> tuple[str, list[str], list[str]]:
     """Returns (verdict, hard, soft) where verdict is 'ok' / 'soft' / 'hard'."""
     html_path = _resolve_html_path(cik, accession)
     legacy = json.loads(legacy_path.read_text())

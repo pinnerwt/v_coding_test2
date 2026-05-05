@@ -77,9 +77,7 @@ def test_queue_halts_nonzero_on_unknown_non_done_status(tmp_path, monkeypatch):
         lambda cik, acc: tmp_path / "fake.html",
     )
 
-    rc = cli_main.main(
-        ["--queue", str(qpath), "--out-dir", str(out_dir), "--all"]
-    )
+    rc = cli_main.main(["--queue", str(qpath), "--out-dir", str(out_dir), "--all"])
     assert rc == 1
     assert "[x]" not in qpath.read_text()
 

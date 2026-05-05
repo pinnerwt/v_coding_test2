@@ -68,9 +68,7 @@ def _resolve_html_path(cik: str, accession: str) -> Path:
         if _normalize_accession(e_acc) != target_acc:
             continue
         return _data_root() / entry["path_relative"]
-    raise SystemExit(
-        f"no archive entry in index.json for cik={cik} accession={accession}"
-    )
+    raise SystemExit(f"no archive entry in index.json for cik={cik} accession={accession}")
 
 
 def _print_summary(result: dict) -> None:
@@ -82,9 +80,7 @@ def _print_summary(result: dict) -> None:
         print(line)
     parts = sorted({r.get("part") for r in records if r.get("part")})
     print(f"items={len(records)} parts={parts}")
-    print(
-        f"cost=${state.cost_usd:.2f} steps={state.steps} status={result['status']}"
-    )
+    print(f"cost=${state.cost_usd:.2f} steps={state.steps} status={result['status']}")
 
 
 def _exit_code_for(status: str) -> int:
@@ -100,9 +96,7 @@ async def _run_one(html_path: str, out_path: str) -> dict:
     big = LLMClient(base_url=cfg.base_url, model=cfg.big_model, api_key=cfg.api_key)
     small = LLMClient(base_url=cfg.base_url, model=cfg.small_model, api_key=cfg.api_key)
     try:
-        return await run_loop(
-            html_path=html_path, out_path=out_path, cfg=cfg, big=big, small=small
-        )
+        return await run_loop(html_path=html_path, out_path=out_path, cfg=cfg, big=big, small=small)
     finally:
         await big.aclose()
         await small.aclose()
@@ -157,9 +151,7 @@ def main(argv: list[str] | None = None) -> int:
 
     modes = sum([has_direct, has_pair, has_queue])
     if modes != 1:
-        parser.error(
-            "choose exactly one mode: <html_path>, --cik+--accession, or --queue"
-        )
+        parser.error("choose exactly one mode: <html_path>, --cik+--accession, or --queue")
 
     if has_pair:
         if not args.out:

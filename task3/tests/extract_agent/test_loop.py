@@ -255,6 +255,4 @@ async def test_loop_rejects_unknown_model_for_pricing(tmp_path: Path):
     big = StubLLM([])
     small = StubLLM([])
     with pytest.raises(ValueError, match="unknown model for pricing"):
-        await run_loop(
-            html_path=str(html), out_path=str(out), cfg=cfg, big=big, small=small
-        )
+        await run_loop(html_path=str(html), out_path=str(out), cfg=cfg, big=big, small=small)
