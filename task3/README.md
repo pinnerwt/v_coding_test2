@@ -12,9 +12,19 @@ The extractor is evaluated along three axes:
 1. **Per-item correctness**
    - 16 records emitted in canonical order, with the right `status` and a
      body whose `char_range` falls inside the cleaned text store.
-   - Measured by diffing against legacy per-filing extractors
-     (`scripts/extract_legacy/`) which act as the deterministic ground
-     truth on the original survey set.
+   - Ground truth without public labels: each per-filing JSON under
+     `eval/*.golden.json` and `data/extracted/*.json` (the regression
+     baseline) was produced by Claude Opus 4.7 with extended thinking
+     (high) reading the filing end-to-end, then frozen into a
+     deterministic per-filing script under `scripts/extract_legacy/` so
+     the diff is byte-comparable. `eval/legacy_overrides.json` records
+     the few items where the legacy script knowingly disagrees with the
+     literal status rules, each with a written reason — the override
+     file is reviewed by hand, not generated.
+   - Cross-validation lever: XBRL Company Facts
+     (`https://data.sec.gov/api/xbrl/companyfacts/CIK{...}.json`) give
+     independent numeric anchors for items 1 / 7 / 7A / 8, used as a
+     spot-check when a body comes back suspiciously short.
 
 2. **Failure modes**
    - Categorized into:
@@ -23,9 +33,10 @@ The extractor is evaluated along three axes:
      - status mis-classification (cross-reference confused with IBR;
        "Reserved" vs "Not applicable")
      - structural mismatch (index-page filings, exotic 2008-era layouts)
-   - Eval set is intentionally biased toward famous/hard 10-Ks
-     (`eval/famous_10ks.json`) chosen via web search for awkward
-     structure.
+   - The eval set is two layers (see "Eval set diversity" below): a
+     15-filing survey slate covering modern-XBRL / heavy-IBR / pre-XBRL
+     HTML / small-cap / 1995 plain-text SGML; and a 10-filing
+     famous-hard set chosen via web search for awkward structure.
 
 3. **Efficiency**
    - DeepSeek `usage` is the source of truth for prompt / completion
@@ -47,6 +58,56 @@ The extractor is evaluated along three axes:
 
 This is the same lightweight loop:
 benchmark → failure triage → fix → re-run.
+
+### Eval set diversity
+
+Two layers, deliberately covering different axes.
+
+**Survey slate** (`src/sec_toolbox/survey.py:SLATE`, 15 filings):
+
+| Cat | Axis | Filings |
+|---|---|---|
+| A | Modern inline-XBRL HTML | Apple FY2023, Microsoft FY2023, NVIDIA FY2024 |
+| B | Heavy "incorporated by reference" | Berkshire Hathaway, JPMorgan Chase, ExxonMobil (most-recent 10-K) |
+| C | Older HTML, pre-XBRL (FY2004) | IBM, General Electric, Coca-Cola |
+| D | Small-cap / recent IPO | Palantir, Reddit, Rivian |
+| E | Older plain-text SGML (FY1995) | IBM, General Electric, Microsoft |
+
+**Famous-hard set** (`eval/famous_10ks.json`, 10 filings) — chosen by web
+search for awkward structure, biased toward 2007–2008 crisis-era and
+pre-SOX layouts:
+
+- Berkshire 2002 / 2008 — Buffett-letter integration, minimal Item-style headings
+- Intel 2001 / 2008 — pre-SOX table-based HTML; non-sequential Item ordering
+- Citigroup 2008, Goldman Sachs 2008 — scattered MD&A, heavy IBR, large bank disclosures
+- AIG 2007 / 2008 — pre-collapse / post-bailout sprawl, restated risk
+- Lehman 2007, Bear Stearns 2007 — last filings before collapse; Bear's primary doc is plain-text SGML
+
+Combined coverage axes: industries (tech, social media, autos, banks,
+insurance, broker-dealers, conglomerates, beverages, energy, defense
+analytics); year span 1995 → 2024; filing formats (inline XBRL, modern
+HTML, pre-SOX table-HTML, plain-text SGML); size (sub-$1B small-caps to
+trillion-dollar megacaps).
+
+### Reported numbers
+
+From the most recent `eval/famous_results.json` (10 filings,
+concurrency 5, per-case wall-clock cap):
+
+| Metric | Value |
+|---|---|
+| Completion rate | 7 / 10 reach `done` |
+| Failures | Berkshire 2008, Intel 2001, Citigroup 2008 — all `max_steps_exceeded`, matching the failure modes called out below |
+| Cost / filing | median **$0.0295**, mean $0.0429, max $0.1023 (DeepSeek `usage`-based) |
+| Total cost across 10 filings | $0.43 |
+| Wall-clock latency | median **41.9 s**, mean 53.1 s, max 121.1 s |
+| Per-filing cost ceiling | $0.50 (`COST_CEILING_USD`) |
+
+For the 8-filing regression set (`eval/regression.py` against
+`scripts/extract_legacy/`), the residual per-item drift on a green run
+is dominated by the four entries in `eval/legacy_overrides.json` —
+status flips on boundary phrasing (NVIDIA items 2 / 9C / 16, Microsoft
+FY2020 item 16), each with a written reason in that file.
 
 ## Failure Analysis
 
@@ -240,7 +301,7 @@ Outputs: `data/survey/report.md`, `data/survey/report.csv`.
 ## Where AI helped me
 
 1. Implement the TDD/e2e tests for every tool (`tests/extract_agent/`).
-2. Implement all the codes — 0 lines were written by me.
+2. Implement all the codes.
 3. Created a `/10k-extraction` skill that:
    - resolves identifiers and runs the agent CLI;
    - falls back to the per-filing legacy script when the agent's hybrid
@@ -337,6 +398,79 @@ docker run --rm -p 8080:8080 \
 
 The container exposes `sec_toolbox.api:app` on port 8080 (filing
 fetch + extraction endpoint).
+
+## HTTP API
+
+`sec_toolbox.api:app` is a FastAPI service that wires
+`sec_toolbox.fetch.Fetcher` (rate-limited SEC fetch + on-disk cache
+under `data/raw/archive/`) to `extract_agent.run_loop`.
+
+### Endpoints
+
+- `GET /health` → `{"status":"ok"}`
+- `GET /docs` → auto-generated OpenAPI / Swagger UI
+- `POST /extract` → run the agent on one filing
+
+### `POST /extract`
+
+Body — exactly one of these two shapes:
+
+| Mode | Body | Notes |
+|---|---|---|
+| Identifier | `{"cik":"320193","accession":"0000320193-23-000106"}` | `primaryDocument` is resolved via the SEC submissions API |
+| URL | `{"url":"https://www.sec.gov/Archives/edgar/data/320193/000032019323000106/aapl-20230930.htm"}` | Must match `…/Archives/edgar/data/{CIK}/{acc-no-dashes}/{filename}` |
+
+Validation responses:
+
+| Status | When |
+|---|---|
+| `422` | empty body, lone `cik` or lone `accession`, or both `url` and `cik+accession` set |
+| `400` | URL doesn't match the SEC archive shape |
+| `404` | accession isn't in the company's `recent` submissions |
+| `500` | agent didn't reach `done` (e.g. `max_steps_exceeded`); `detail` carries `{status, cost_usd, steps}` |
+
+Successful response:
+
+```json
+{
+  "cik": "320193",
+  "accession": "0000320193-23-000106",
+  "filename": "aapl-20230930.htm",
+  "items": [
+    {
+      "part": "I",
+      "item_number": "1",
+      "item_title": "Business",
+      "content_text": "…",
+      "char_range": [0, 51234],
+      "status": "extracted"
+    }
+  ],
+  "stats": {"status": "done", "cost_usd": 0.0234, "steps": 11}
+}
+```
+
+### Examples
+
+```bash
+# Identifier mode
+curl -s https://api.pinner.top/extract \
+  -H 'content-type: application/json' \
+  -d '{"cik":"320193","accession":"0000320193-23-000106"}' \
+  | jq '{cik, accession, n_items: (.items|length), stats}'
+
+# URL mode
+curl -s https://api.pinner.top/extract \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://www.sec.gov/Archives/edgar/data/320193/000032019323000106/aapl-20230930.htm"}' \
+  | jq '.items[0]'
+
+# Health
+curl -s https://api.pinner.top/health
+```
+
+There is no auth on the deployed instance — requests are rate-limited
+upstream by SEC EDGAR (10 req/sec, enforced inside `sec_toolbox`).
 
 ## Zeabur
 
