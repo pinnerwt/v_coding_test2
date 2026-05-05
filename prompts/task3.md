@@ -17,3 +17,7 @@ The TOC stub should not appear in the output JSON. It is just something that hel
 Let's discuss this: Is it possible for an item to be multiple statuses? I mean, it could have multiple extracted, but also incorportae for ref in some paragraphs
 I think we should split it into several items. Per @AI-coding-EN.md , it only fixes the output schema. The only way to stick with it is to have multiple elements for the same item. This also tells us that we might need to read every text in detail to do the correct cut. Go through LLM first. We have no idea how documents in 2008 look the same. Go through LLM first. We have no idea how documents in 2008 look the same. We summon subagents (haiku) with bounded tasks, asking it if the text is appliable to incorporate by reference. The main thread of skill will read them and adjust the final output. Always-on for extracted bodies. For eval set, use other docs in index.json.
 One question: if we cut the incorporated by reference phrase at the middle while segmenting, we might fail to identify the phrase. We might need to overlap + resection
+
+Write this also in the end of skill: when we finished the run, conclude what could have been noticed earlier in the subagents/skill instructions. Know that the conclusion should be also anti-benchmaxxing, and ready to be updated in the skill file itself.
+
+I want to transform 10k extraction skill into an agent with serialized steps + different tools

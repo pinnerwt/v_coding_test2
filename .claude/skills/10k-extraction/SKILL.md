@@ -25,9 +25,10 @@ The script writes a JSON array of these objects to disk.
 ## Inputs
 
 - A local HTML path, **or**
-- A CIK + accession (look up in `task3/data/index.json`; entries with `endpoint == "archive"` give `path_relative`).
+- A CIK + accession (look up in `task3/data/index.json`; entries with `endpoint == "archive"` give `path_relative`), **or**
+- Nothing — pick the next unchecked row from `test_source.md` at the repo root. That file is the working queue: a markdown table whose rows carry `CIK | Accession (no dashes) | Path` and a `Done` column with `[ ]` / `[x]`. Take the first row with `[ ]` and use its CIK + accession + path as the inputs. If the user names a row by number ("row 5", "next") resolve against the same file. If `test_source.md` is missing or all rows are ticked, fall back to asking for CIK + accession or a path.
 
-If only a company name or year is given, ask once for CIK + accession or a path. Don't guess.
+If only a company name or year is given (and no row matches), ask once for CIK + accession or a path. Don't guess.
 
 ## Workflow
 
@@ -43,6 +44,7 @@ The skill runs as a chain of phases. Two of them — diagnostics and validation 
 | 5b. **Status splitting** | **Haiku Agent fan-out (parallel)** | One bounded subagent per `extracted` record. Each classifies its body into status spans; main thread merges and rewrites the JSON in place |
 | 6. **Validation pass** | **Explore subagent** | Reads the full JSON + runs `_validate.py`; main thread only needs the grouped findings |
 | 7. Report | Main thread | Synthesizes the diagnostic summary, the run output, and the validation findings into the user-facing reply |
+| 8. Tick queue | Main thread | If the inputs came from `test_source.md` (or the row is identifiable by CIK + accession), flip that row's `[ ]` to `[x]` via a single `Edit` call. Skip if no matching row exists. Do this AFTER Phase 7 so the tick reflects a completed report, not a half-finished run. |
 
 **Run command** (phase 5):
 ```bash
@@ -78,7 +80,8 @@ After the per-filing script writes the JSON, the main thread re-reads it and dis
 **Eligibility filter** — only fan out for records where ALL of:
 - `status == "extracted"` (other statuses are mechanical and unambiguous);
 - `len(content_text) >= 200` (shorter bodies — `"Refer to Item 10."`, `"Not applicable."` — can't meaningfully split, save the call);
-- `not (item_number == "15" and len(content_text) >= 500_000)` (Item 15 EOF run-on contains financial statements + glossary + auditor reports, not item content; sub-classifying that would dominate cost without honoring the schema's intent).
+- `not (item_number == "15" and len(content_text) >= 500_000)` (Item 15 EOF run-on contains financial statements + glossary + auditor reports, not item content; sub-classifying that would dominate cost without honoring the schema's intent);
+- `re.search(r"incorporat\w*(?:\s+\w+){0,8}\s+by\s+reference", content_text, re.IGNORECASE)` matches at least once. Without this anchor phrase there is no plausible IBR sentence in the body, so Phase 5b has nothing to find — the call is guaranteed to return one full-body `extracted` segment. Cost asymmetry is what justifies the gate: a false negative here silently drops a real IBR (expensive); a false positive just dispatches a Haiku call that returns the no-op single segment (cheap). The `{0,8}` window keeps `"incorporated **herein** by reference to"`, `"incorporated, by reference,"`, `"is hereby incorporated by reference"` and similar variants in scope. Do **not** try to also exclude negation (`"not incorporated by reference"`) or table-header occurrences here — let those pass through; precision lives in Phase 5b itself, the pre-filter is recall-only. Empirically (Berkshire 2025, MSFT FY2020) ~80% of `extracted` records contain no IBR phrase at all and skip the dispatch with no quality loss.
 
 **Dispatch pattern** — fan out in parallel: one Claude Code Agent tool call per eligible record, all in a single assistant message (per `superpowers:dispatching-parallel-agents`). Use `model: "haiku"` and `subagent_type: "general-purpose"`. Each prompt has the form:
 
@@ -96,9 +99,9 @@ Inputs:
 Return ONLY the JSON object specified in the phase file. No prose.
 ```
 
-**Merge** — the subagent returns *segments* (snippet-anchored), not character offsets. The phase file forbids it from computing offsets directly because token-models cannot count characters reliably (this was discovered in the JPM 2025 GREEN test where Haiku reported a body length of 2272 vs the true 3923). For each subagent return:
+**Merge** — the subagent returns *segments* (snippet-anchored), not character offsets. The phase file forbids it from computing offsets directly because token-models cannot count characters reliably (this was discovered in the JPM 2025 GREEN test where Haiku reported a body length of 2272 vs the true 3923). The merge logic is implemented in `task3/scripts/extract/_merge_5b.py` (function `merge_records(records, results)` for in-process use, or CLI `uv run python scripts/extract/_merge_5b.py <json_path> <segments_path>` where segments_path is `{record_index: [segments]}` JSON). Do not re-implement the merge in `/tmp` per filing — call the shared module. The merge logic itself is:
 1. Parse the JSON; reject (and keep the parent record unchanged) if `segments` is missing/malformed or contains unknown statuses.
-2. For each segment, locate `starts_with` in the parent body via `body.find()`. Reject if missing OR appears more than once (ambiguous). The segment's `body_start` is `body.find(starts_with)`. The segment's `body_end` is the **next segment's `body_start`** (or `len(body)` for the last segment). This means inter-sentence whitespace between segments is absorbed into the prior segment — a deliberate choice, because IBR sentences typically end with `". "` or `".\n\n"` and asking the subagent to choose which side of the whitespace owns the byte is brittle (Haiku will pick differently across runs and miss by 1–2 chars). Sanity-check `ends_with`: it must occur exactly once in the body, and its match must fall inside `[body_start, body_end)`.
+2. For each segment, locate `starts_with` in the parent body via `body.find()`. Reject if missing OR appears more than once (ambiguous). The segment's `body_start` is `body.find(starts_with)`. The segment's `body_end` is the **next segment's `body_start`** (or `len(body)` for the last segment). This means inter-sentence whitespace between segments is absorbed into the prior segment — a deliberate choice, because IBR sentences typically end with `". "` or `".\n\n"` and asking the subagent to choose which side of the whitespace owns the byte is brittle (Haiku will pick differently across runs and miss by 1–2 chars). **Do NOT reject on `ends_with` mismatch.** `ends_with` is never load-bearing for boundary computation — `body_end` derives entirely from the next segment's `body_start` (or `len(body)`), so even a hallucinated `ends_with` doesn't corrupt offsets. Token-models routinely emit non-verbatim trailing snippets — they may stitch together text from non-adjacent sentences when the body contains near-duplicate phrases — and strict validation throws away otherwise-correct `starts_with` + `status` triples for nothing. Use `ends_with` only as soft signal for human review, not as a rejection gate. **Quote-fold both sides before matching `starts_with`.** Modern 10-Ks render typographic punctuation (U+2018/U+2019 `'`/`'`, U+201C/U+201D `"`/`"`, U+2013/U+2014 `–`/`—`) but Haiku consistently emits the ASCII equivalents, so verbatim `body.find(snippet)` returns 0x for almost every segment unless both strings are normalised. Apply a position-preserving `str.translate` mapping curly→ASCII (each replacement is 1-char→1-char so offsets in the folded string match offsets in the original) to both the body and the snippet for `find`/`count`; slice `content_text` from the un-folded original. This is structural, not a token rule — every modern filing trips it; do not gate on filer.
 3. Validate the resulting spans: monotonic starts, adjacent statuses differ. **If `segments[0].body_start > 0`** (the subagent skipped past residue at the head — observed on Haiku when the body opens with content from an adjacent section, e.g. GE 2018 Item 3 opens with Risk Factors residue from page 86), auto-prepend an `extracted` segment covering `[0, segments[0].body_start)` rather than rejecting the whole split. The prose rule "segment[0] must anchor at body[0]" is correct guidance for the subagent but is not load-bearing on Haiku in practice; the merge code is the load-bearing fix. If two adjacent segments collapse to the same status after prepending, merge them.
 4. Convert each span to absolute by adding the parent's `char_range[0]`.
 5. Replace the parent record with one new record per segment — same `part`, `item_number`, `item_title`; `content_text` sliced from the parent's body using `body_start`/`body_end`; `char_range` absolute; `status` from the segment.
@@ -237,3 +240,40 @@ uv run python scripts/extract/320193-000032019323000106.py \
     data/raw/archive/320193/000032019323000106/aapl-20230930.htm \
     --out data/extracted/320193-000032019323000106.json
 ```
+
+## Post-run reflection (Phase 9)
+
+After Phase 7 (the user-facing report) and Phase 8 (queue tick), spend one short pass asking: *of the things this run surfaced, what could the skill / phase docs / subagent prompts / validator have caught earlier?* The goal is not "what went wrong on this filing" — Phase 7 already covered that — but "what guidance, if it had been present at the start of the run, would have prevented the friction we saw?"
+
+This reflection has two failure modes and the section structure exists to ward off both. The first is **silence**: shipping the run, ticking the box, and never noticing that the same correction is being made on every filing — the skill never learns. The second is **benchmaxxing**: every quirk gets lifted to skill prose and SKILL.md grows into a list of last-filing's mistakes. The four anti-benchmaxxing checks at the top of "How to edit this skill" exist for the second mode; this section's discipline exists for the first.
+
+### How to run the reflection
+
+For each candidate finding, write one bullet of the form:
+
+> **{symptom in plain words}** — *destination:* `skill prose | phase doc | subagent prompt | _validate.py | per-filing script docstring | drop`. *Why that destination:* {one sentence, naming which of the four anti-benchmaxxing checks this clears or fails}.
+
+A finding without a destination decision is not a finding yet — it's an observation. Either it earns one of the destinations above, or it stays in the per-filing script's docstring and waits for N≥2.
+
+### The four checks, restated for reflection use
+
+These are the same checks as "How to edit this skill" — repeated here because reflection is when you'll be tempted to skip them.
+
+1. **N≥2 before lifting.** If this is the first time the trait has appeared, the destination is the per-filing script docstring or "drop", not skill prose. Cross-reference the failure-modes table and prior per-filing script docstrings before claiming N=1.
+2. **Structural over surface.** A vendor-specific token (footer string, phrase, exact item title) belongs in the per-filing script. A *property* of the document or the pipeline (e.g. "Haiku emits ASCII quotes regardless of body encoding", "TOC anchors cluster in the first ~8 KB") can live in skill prose.
+3. **The destination has to be load-bearing in code, not in prose.** If the fix is a prose rule the next author has to remember, ask whether the same fix can live in `_validate.py` (mechanical check), the merge script (deterministic transform), or a Phase 5b prompt constraint (closes the loop without manual recall). Prose rules that depend on a human noticing them are the weakest destination — use them only when no code destination exists.
+4. **Reflection output ≤ ~5 bullets.** If you have ten findings, eight of them are observations, not findings. Pick the two most load-bearing.
+
+### What to look for (questions, not assertions)
+
+These are deliberately questions — answers will differ per filing, and a probe that pre-decides what's interesting will train future-you to miss the variant.
+
+- Did the merge step reject any subagent return for a reason that would recur on every filing? (E.g. character-class assumptions in snippet matching, ambiguous anchors that token-models predictably miss.)
+- Did the per-filing script need a hand-tuned constant that the diagnostic phase could have surfaced if its probes asked one more question?
+- Did Phase 6 surface a warning that was actually expected (proxy IBR stubs, Item 8 auditor signature run-on)? If so, is the validator over-warning, or is the warning load-bearing on a different filing?
+- Did the user-facing reply have to explain a "this is fine" that the validator could have suppressed?
+- Did a phase doc say something that the subagent demonstrably ignored? (Strengthening the prompt is rarely the right answer — usually the right answer is to make the merge code defensive against the violation.)
+
+### Where the bullets land
+
+Apply them in the same run if they pass the four checks. Skill prose edits, phase doc edits, and `_validate.py` edits all happen in this thread; per-filing script docstring edits stay with the filing. If a bullet doesn't pass the four checks, leave it on the floor — re-deriving it next run is cheap, and overfitting is expensive.
