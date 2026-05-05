@@ -2,6 +2,7 @@
 
 ### Evaluation, Failure Analysis, Key Design Tradeoffs
 - [task2](task2/README.md)
+- [task3](task3/README.md)
 
 [![Python](https://img.shields.io/badge/python-3.11-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![uv](https://img.shields.io/badge/uv-0.9.3-261230?logo=python&logoColor=white)](https://github.com/astral-sh/uv)
