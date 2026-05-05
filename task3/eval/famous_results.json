@@ -1,0 +1,728 @@
+[
+  {
+    "label": "Berkshire 2008",
+    "status": "done",
+    "steps": 12,
+    "cost_usd": 0.0229,
+    "elapsed": 35.6,
+    "n_records": 20,
+    "items": [
+      [
+        "10",
+        "incorporated_by_reference",
+        126
+      ],
+      [
+        "11",
+        "incorporated_by_reference",
+        126
+      ],
+      [
+        "12",
+        "incorporated_by_reference",
+        126
+      ],
+      [
+        "13",
+        "incorporated_by_reference",
+        126
+      ],
+      [
+        "14",
+        "incorporated_by_reference",
+        126
+      ],
+      [
+        "1",
+        "extracted",
+        89374
+      ],
+      [
+        "1A",
+        "extracted",
+        11279
+      ],
+      [
+        "1B",
+        "not_applicable",
+        6
+      ],
+      [
+        "2",
+        "extracted",
+        7820
+      ],
+      [
+        "3",
+        "extracted",
+        17094
+      ],
+      [
+        "4",
+        "extracted",
+        698
+      ],
+      [
+        "5",
+        "extracted",
+        1189
+      ],
+      [
+        "6",
+        "extracted",
+        3315
+      ],
+      [
+        "7",
+        "extracted",
+        120461
+      ],
+      [
+        "7A",
+        "extracted",
+        1478
+      ],
+      [
+        "8",
+        "extracted",
+        134720
+      ],
+      [
+        "9",
+        "not_applicable",
+        5
+      ],
+      [
+        "9A",
+        "extracted",
+        1517
+      ],
+      [
+        "9B",
+        "extracted",
+        8391
+      ],
+      [
+        "15",
+        "extracted",
+        9571
+      ]
+    ]
+  },
+  {
+    "label": "Berkshire 2002",
+    "status": "max_steps_exceeded",
+    "steps": 30,
+    "cost_usd": 0.1379,
+    "elapsed": 94.8,
+    "n_records": 0,
+    "items": []
+  },
+  {
+    "label": "Intel 2001",
+    "status": "max_steps_exceeded",
+    "steps": 30,
+    "cost_usd": 0.0784,
+    "elapsed": 101.2,
+    "n_records": 0,
+    "items": []
+  },
+  {
+    "label": "Intel 2008",
+    "status": "done",
+    "steps": 17,
+    "cost_usd": 0.038,
+    "elapsed": 43.7,
+    "n_records": 20,
+    "items": [
+      [
+        "1",
+        "extracted",
+        59454
+      ],
+      [
+        "1A",
+        "extracted",
+        31596
+      ],
+      [
+        "1B",
+        "not_applicable",
+        31
+      ],
+      [
+        "2",
+        "extracted",
+        2461
+      ],
+      [
+        "3",
+        "extracted",
+        118
+      ],
+      [
+        "4",
+        "not_applicable",
+        79
+      ],
+      [
+        "5",
+        "extracted",
+        4143
+      ],
+      [
+        "6",
+        "extracted",
+        1858
+      ],
+      [
+        "7",
+        "extracted",
+        109537
+      ],
+      [
+        "7A",
+        "extracted",
+        8381
+      ],
+      [
+        "8",
+        "extracted",
+        210870
+      ],
+      [
+        "9",
+        "not_applicable",
+        93
+      ],
+      [
+        "9A",
+        "extracted",
+        4663
+      ],
+      [
+        "9B",
+        "not_applicable",
+        52
+      ],
+      [
+        "10",
+        "incorporated_by_reference",
+        1755
+      ],
+      [
+        "11",
+        "incorporated_by_reference",
+        266
+      ],
+      [
+        "12",
+        "incorporated_by_reference",
+        574
+      ],
+      [
+        "13",
+        "incorporated_by_reference",
+        261
+      ],
+      [
+        "14",
+        "incorporated_by_reference",
+        306
+      ],
+      [
+        "15",
+        "extracted",
+        14927
+      ]
+    ]
+  },
+  {
+    "label": "Citigroup 2008",
+    "status": "max_steps_exceeded",
+    "steps": 30,
+    "cost_usd": 0.0817,
+    "elapsed": 75.1,
+    "n_records": 0,
+    "items": []
+  },
+  {
+    "label": "Goldman Sachs 2008",
+    "status": "done",
+    "steps": 8,
+    "cost_usd": 0.0097,
+    "elapsed": 22.1,
+    "n_records": 20,
+    "items": [
+      [
+        "1",
+        "extracted",
+        90796
+      ],
+      [
+        "1A",
+        "extracted",
+        59417
+      ],
+      [
+        "1B",
+        "extracted",
+        222
+      ],
+      [
+        "2",
+        "extracted",
+        4276
+      ],
+      [
+        "3",
+        "extracted",
+        40952
+      ],
+      [
+        "4",
+        "extracted",
+        6505
+      ],
+      [
+        "5",
+        "extracted",
+        5747
+      ],
+      [
+        "6",
+        "extracted",
+        119
+      ],
+      [
+        "7",
+        "extracted",
+        242406
+      ],
+      [
+        "7A",
+        "extracted",
+        266
+      ],
+      [
+        "8",
+        "extracted",
+        271031
+      ],
+      [
+        "9",
+        "extracted",
+        209
+      ],
+      [
+        "9A",
+        "extracted",
+        1061
+      ],
+      [
+        "9B",
+        "not_applicable",
+        62
+      ],
+      [
+        "10",
+        "incorporated_by_reference",
+        832
+      ],
+      [
+        "11",
+        "incorporated_by_reference",
+        219
+      ],
+      [
+        "12",
+        "incorporated_by_reference",
+        2865
+      ],
+      [
+        "13",
+        "incorporated_by_reference",
+        238
+      ],
+      [
+        "14",
+        "incorporated_by_reference",
+        200
+      ],
+      [
+        "15",
+        "extracted",
+        20298
+      ]
+    ]
+  },
+  {
+    "label": "AIG 2007",
+    "status": "max_steps_exceeded",
+    "steps": 30,
+    "cost_usd": 0.1505,
+    "elapsed": 142.2,
+    "n_records": 0,
+    "items": []
+  },
+  {
+    "label": "AIG 2008",
+    "status": "done",
+    "steps": 14,
+    "cost_usd": 0.0283,
+    "elapsed": 37.0,
+    "n_records": 20,
+    "items": [
+      [
+        "1",
+        "extracted",
+        64543
+      ],
+      [
+        "1B",
+        "extracted",
+        322
+      ],
+      [
+        "2",
+        "extracted",
+        834
+      ],
+      [
+        "3",
+        "extracted",
+        151
+      ],
+      [
+        "4",
+        "extracted",
+        243
+      ],
+      [
+        "5",
+        "extracted",
+        1044
+      ],
+      [
+        "6",
+        "extracted",
+        5939
+      ],
+      [
+        "7",
+        "extracted",
+        42223
+      ],
+      [
+        "1A",
+        "extracted",
+        286087
+      ],
+      [
+        "7A",
+        "extracted",
+        153
+      ],
+      [
+        "8",
+        "extracted",
+        480742
+      ],
+      [
+        "9",
+        "not_applicable",
+        83
+      ],
+      [
+        "9A",
+        "extracted",
+        8271
+      ],
+      [
+        "9B",
+        "not_applicable",
+        28
+      ],
+      [
+        "10",
+        "incorporated_by_reference",
+        433
+      ],
+      [
+        "11",
+        "incorporated_by_reference",
+        295
+      ],
+      [
+        "12",
+        "incorporated_by_reference",
+        368
+      ],
+      [
+        "13",
+        "incorporated_by_reference",
+        348
+      ],
+      [
+        "14",
+        "incorporated_by_reference",
+        320
+      ],
+      [
+        "15",
+        "extracted",
+        47261
+      ]
+    ]
+  },
+  {
+    "label": "Lehman 2007",
+    "status": "done",
+    "steps": 21,
+    "cost_usd": 0.0399,
+    "elapsed": 50.4,
+    "n_records": 20,
+    "items": [
+      [
+        "1",
+        "extracted",
+        63111
+      ],
+      [
+        "1A",
+        "extracted",
+        46741
+      ],
+      [
+        "1B",
+        "not_applicable",
+        15
+      ],
+      [
+        "2",
+        "extracted",
+        1600
+      ],
+      [
+        "3",
+        "extracted",
+        22977
+      ],
+      [
+        "4",
+        "not_applicable",
+        52
+      ],
+      [
+        "5",
+        "extracted",
+        4582
+      ],
+      [
+        "6",
+        "extracted",
+        9711
+      ],
+      [
+        "7",
+        "extracted",
+        214040
+      ],
+      [
+        "7A",
+        "incorporated_by_reference",
+        250
+      ],
+      [
+        "8",
+        "extracted",
+        202162
+      ],
+      [
+        "9",
+        "not_applicable",
+        76
+      ],
+      [
+        "9A",
+        "extracted",
+        1652
+      ],
+      [
+        "9B",
+        "not_applicable",
+        54
+      ],
+      [
+        "10",
+        "incorporated_by_reference",
+        1746
+      ],
+      [
+        "11",
+        "incorporated_by_reference",
+        374
+      ],
+      [
+        "12",
+        "incorporated_by_reference",
+        651
+      ],
+      [
+        "13",
+        "incorporated_by_reference",
+        526
+      ],
+      [
+        "14",
+        "incorporated_by_reference",
+        304
+      ],
+      [
+        "15",
+        "extracted",
+        57102
+      ]
+    ]
+  },
+  {
+    "label": "Bear Stearns 2007",
+    "status": "done",
+    "steps": 28,
+    "cost_usd": 0.0946,
+    "elapsed": 85.8,
+    "n_records": 26,
+    "items": [
+      [
+        "1",
+        "extracted",
+        7839
+      ],
+      [
+        "1",
+        "incorporated_by_reference",
+        1043
+      ],
+      [
+        "1",
+        "extracted",
+        42993
+      ],
+      [
+        "1A",
+        "extracted",
+        29852
+      ],
+      [
+        "1B",
+        "not_applicable",
+        5
+      ],
+      [
+        "2",
+        "extracted",
+        2022
+      ],
+      [
+        "3",
+        "extracted",
+        32323
+      ],
+      [
+        "4",
+        "extracted",
+        3188
+      ],
+      [
+        "5",
+        "incorporated_by_reference",
+        3576
+      ],
+      [
+        "6",
+        "incorporated_by_reference",
+        215
+      ],
+      [
+        "7",
+        "incorporated_by_reference",
+        303
+      ],
+      [
+        "7A",
+        "incorporated_by_reference",
+        210
+      ],
+      [
+        "8",
+        "incorporated_by_reference",
+        378
+      ],
+      [
+        "9",
+        "extracted",
+        28
+      ],
+      [
+        "9A",
+        "extracted",
+        1287
+      ],
+      [
+        "9A",
+        "incorporated_by_reference",
+        449
+      ],
+      [
+        "9A",
+        "extracted",
+        696
+      ],
+      [
+        "9B",
+        "extracted",
+        16
+      ],
+      [
+        "10",
+        "incorporated_by_reference",
+        1168
+      ],
+      [
+        "11",
+        "incorporated_by_reference",
+        189
+      ],
+      [
+        "12",
+        "incorporated_by_reference",
+        330
+      ],
+      [
+        "13",
+        "incorporated_by_reference",
+        432
+      ],
+      [
+        "14",
+        "incorporated_by_reference",
+        225
+      ],
+      [
+        "15",
+        "extracted",
+        16932
+      ],
+      [
+        "15",
+        "incorporated_by_reference",
+        1014
+      ],
+      [
+        "15",
+        "extracted",
+        140
+      ]
+    ]
+  }
+]
