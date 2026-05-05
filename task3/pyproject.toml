@@ -4,8 +4,6 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.28.1",
-    "pytest-asyncio>=1.3.0",
-    "pytest-httpx>=0.36.2",
 ]
 
 [build-system]
@@ -29,6 +27,7 @@ testpaths = ["tests"]
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.0.3",
+    "pytest-asyncio>=1.3.0",
     "pytest-httpx>=0.36.2",
     "ruff>=0.15.12",
 ]

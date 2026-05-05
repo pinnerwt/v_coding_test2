@@ -25,7 +25,7 @@
 
 Run from `task3/`:
 ```bash
-uv add pytest-asyncio pytest-httpx
+uv add --dev pytest-asyncio pytest-httpx
 ```
 
 **Step 2: Write failing smoke test**
