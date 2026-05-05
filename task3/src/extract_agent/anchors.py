@@ -32,19 +32,51 @@ ITEM_TO_PART = {
 }
 
 
+def _extract_groups(m: re.Match, use_named: bool) -> tuple[str, str, str]:
+    """Return (num, letter, title) from a match.
+
+    `use_named=True` reads the `item_number`/`item_letter`/`item_title` named
+    groups; otherwise reads positional groups 1/2/3 (canonical ITEM_RE shape).
+    """
+    if use_named:
+        gd = m.groupdict()
+        num = gd.get("item_number") or ""
+        letter = (gd.get("item_letter") or "").upper()
+        title = (gd.get("item_title") or "").strip()
+        return num, letter, title
+    num = m.group(1)
+    letter = (m.group(2) or "").upper()
+    title = (m.group(3) or "").strip()
+    return num, letter, title
+
+
 def find_anchors(text: str, *, regex: re.Pattern | None = None) -> list[dict]:
     pat = regex or ITEM_RE
+    use_named = "item_number" in pat.groupindex
+    if not use_named and pat.groups < 1:
+        raise ValueError(
+            "regex must expose `item_number` as a named group (preferred), or "
+            "use the canonical ITEM_RE positional-group contract: "
+            "group(1)=item_number, group(2)=item_letter, group(3)=item_title."
+        )
     out = []
     for m in pat.finditer(text):
-        num = m.group(1)
-        letter = (m.group(2) or "").upper()
+        try:
+            num, letter, title = _extract_groups(m, use_named)
+        except IndexError as exc:
+            raise ValueError(
+                "regex group contract violated: expected named group "
+                "`item_number` (preferred) or numbered groups 1/2/3 matching "
+                "ITEM_RE's (item_number)(item_letter)(item_title) layout. "
+                f"Underlying error: {exc}"
+            ) from exc
         item_id = num + letter
         if item_id not in ITEM_TO_PART:
             continue
         out.append(
             {
                 "item_number": item_id,
-                "title": (m.group(3) or "").strip(),
+                "title": title,
                 "match_start": m.start(),
                 "match_end": m.end(),
             }

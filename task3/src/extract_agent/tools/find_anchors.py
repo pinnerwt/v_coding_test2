@@ -21,8 +21,15 @@ SCHEMA = {
                 "regex": {
                     "type": "string",
                     "description": (
-                        "Optional override regex (Python re syntax with "
-                        "IGNORECASE|MULTILINE). Defaults to the canonical ITEM_RE."
+                        "Optional override regex (Python re syntax, compiled "
+                        "with IGNORECASE|MULTILINE). Must expose either: "
+                        "(a) named group `item_number` (preferred), with "
+                        "optional `item_letter` and `item_title`; or "
+                        "(b) the canonical ITEM_RE positional layout: "
+                        "group(1)=item_number, group(2)=item_letter, "
+                        "group(3)=item_title. A regex that does not satisfy "
+                        "either contract returns a clear error — do not retry "
+                        "the same shape; switch to named groups."
                     ),
                 },
                 "toc_threshold": {

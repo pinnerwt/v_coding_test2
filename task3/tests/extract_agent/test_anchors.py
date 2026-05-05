@@ -94,3 +94,61 @@ def test_toc_dot_leader_title_captured():
     anchors = find_anchors(text)
     assert [a["item_number"] for a in anchors] == ["1"]
     assert "Business" in anchors[0]["title"]
+
+
+def test_custom_regex_with_named_groups():
+    # Custom regex can supply named groups: item_number (required),
+    # item_letter (optional), item_title (optional).
+    import re
+
+    pat = re.compile(
+        r"^\s*(?P<item_number>1[0-6]|[1-9])(?P<item_letter>[A-C])?\.\s+(?P<item_title>.*?)$",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    text = "1. Business\nbody\n\n1A. Risk Factors\nbody\n"
+    anchors = find_anchors(text, regex=pat)
+    assert [a["item_number"] for a in anchors] == ["1", "1A"]
+    assert anchors[0]["title"] == "Business"
+    assert anchors[1]["title"] == "Risk Factors"
+
+
+def test_custom_regex_named_item_number_only():
+    # Only item_number named group; item_letter / item_title optional.
+    import re
+
+    pat = re.compile(
+        r"^\s*(?P<item_number>[1-9]|1[0-6])\.\s",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    text = "1. Business\nbody\n2. Properties\nbody\n"
+    anchors = find_anchors(text, regex=pat)
+    assert [a["item_number"] for a in anchors] == ["1", "2"]
+    assert anchors[0]["title"] == ""
+
+
+def test_custom_regex_missing_contract_raises():
+    # A regex with neither numbered groups nor `item_number` named group
+    # must raise ValueError so the tool envelope shows a clear message
+    # (instead of leaking IndexError: no such group).
+    import re
+
+    import pytest
+
+    pat = re.compile(r"^\s*ITEM\s+\d+", re.IGNORECASE | re.MULTILINE)
+    with pytest.raises(ValueError, match="item_number"):
+        find_anchors("ITEM 1. Business\nbody", regex=pat)
+
+
+def test_custom_regex_non_capturing_groups_raises():
+    # Real failure mode from Citigroup 2008 trace: agent supplied a regex
+    # whose alternation uses non-capturing groups, so group(1) is absent.
+    import re
+
+    import pytest
+
+    pat = re.compile(
+        r"^(?:Item\s+[1-9][A-Z]?|PART\s+(?:I{1,3}|IV))\b",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    with pytest.raises(ValueError, match="item_number"):
+        find_anchors("Item 1. Business", regex=pat)
