@@ -6,6 +6,7 @@ from . import (
     read_chars,
     regex_search,
     slice_items,
+    update_record,
     validate_records,
     write_output,
 )
@@ -19,6 +20,7 @@ REGISTRY = {
     "read_chars": read_chars,
     "regex_search": regex_search,
     "inspect_record": inspect_record,
+    "update_record": update_record,
     "done": done,
 }
 
