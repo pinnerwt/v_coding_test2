@@ -10,3 +10,6 @@ We are working on task3/ . I would like to create a skill that read SEC 10K docu
 Let's stop here first. Can you update the skill to - What elements did you try to spot first when encountering a new document. Focus on "what functions did you call" and "why you end up designing the function like that" . The idea is that when we run the skill on a new document, it can reproduce a new script with less token usage and with a more structural approach.
 Note that if an item is cut to different parts in the document, we should output multiple, since the start_range and end_range is fixed per output
 Let's work on a refactor of what python codes you have used first. You tried to find occurrence of different words, different regex expressions, first 3 KBs and others. Can you make them a tool script with different arguments so that you can reuse them easily next time?
+
+Can you write a verification file that will help you verify the output too for next run? The idea is to avoid direct shell script in next runs
+The TOC stub should not appear in the output JSON. It is just something that helps you identify the structure/location of different Items.

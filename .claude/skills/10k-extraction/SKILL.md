@@ -102,9 +102,10 @@ The backbone is the same across filings. The per-filing tweaks live in the regex
    }
    ```
 
-4. **Do NOT deduplicate occurrences.** Each `ITEM_RE` match becomes its own output record, with its own `char_range`. The schema's `char_range` is a single `[start, end]` pair per record; if the same item appears in multiple non-contiguous places (TOC stub + body, or split body sections), each appearance must be a separate record. Downstream consumers can deduplicate by `item_number` and pick the longest body if they want a single canonical entry.
+4. **Deduplicate to one record per item — keep the longest body.** TOC stubs are a navigation aid, not output. Group anchors by `item_number` and emit only the occurrence with the longest sliced body (this is, in practice, the body heading; TOC stubs slice between adjacent TOC lines and yield ~1–3 char page-number bodies). The output JSON has one record per item.
    - Tag each anchor's `part` from the canonical `ITEM_TO_PART` map (not from the most-recent `PART` anchor — see §5 below for why).
    - Drop matches whose item number isn't in the canonical map (defensive against the rare stray `ITEM 60` style false positive that survives the regex).
+   - If a body item legitimately splits across the document (rare — typically only Item 8 financial statements), keep the longest contiguous slice; downstream consumers expect a single `[start, end]` per item.
 
 5. **Slice content** — `content_text` = cleaned text from end of heading line to start of the **next ITEM anchor only**:
    ```python

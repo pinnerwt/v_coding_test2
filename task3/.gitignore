@@ -5,3 +5,5 @@ __pycache__/
 .ruff_cache/
 data/raw/
 data/index.json
+data/extracted/
+task3/scripts/extract/*-*.py
