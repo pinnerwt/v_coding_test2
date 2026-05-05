@@ -20,6 +20,16 @@ _IBR_RE = re.compile(
     re.IGNORECASE,
 )
 
+_JSON_FENCE_RE = re.compile(
+    r"^\s*```(?:json)?\s*\n(?P<body>.*?)\n```\s*$",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _strip_fence(s: str) -> str:
+    m = _JSON_FENCE_RE.match(s)
+    return m.group("body") if m else s
+
 
 def eligible_indices(records: list[dict]) -> list[int]:
     """Return indices of records that should be sent to the small model.
@@ -61,7 +71,7 @@ async def classify_records(
 
     system_prompt = _SYSTEM_PROMPT_PATH.read_text()
 
-    async def _one(i: int) -> tuple[int, dict[str, Any], str | None]:
+    async def _one(i: int) -> tuple[int, dict[str, Any] | None, str | None]:
         r = records[i]
         messages = [
             {"role": "system", "content": system_prompt},
@@ -74,7 +84,10 @@ async def classify_records(
                 ),
             },
         ]
-        msg, _usage = await client.chat(messages, temperature=0.0)
+        try:
+            msg, _usage = await client.chat(messages, temperature=0.0)
+        except Exception as e:
+            return i, None, f"small-model call failed: {e}"
         return i, msg, None
 
     tasks = [_one(i) for i in idx]
@@ -82,7 +95,10 @@ async def classify_records(
 
     results: dict[int, list[dict]] = {}
     parse_rejections: list[str] = []
-    for i, msg, _ in raw:
+    for i, msg, err in raw:
+        if err is not None:
+            parse_rejections.append(f"index {i} item {records[i]['item_number']}: {err}")
+            continue
         content = msg.get("content") if isinstance(msg, dict) else None
         if not isinstance(content, str):
             parse_rejections.append(
@@ -91,7 +107,7 @@ async def classify_records(
             )
             continue
         try:
-            parsed = json.loads(content)
+            parsed = json.loads(_strip_fence(content))
         except json.JSONDecodeError as e:
             parse_rejections.append(
                 f"index {i} item {records[i]['item_number']}: bad small-model JSON: {e.msg}"

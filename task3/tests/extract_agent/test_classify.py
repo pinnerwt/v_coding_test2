@@ -116,3 +116,83 @@ async def test_classify_records_records_bad_json_rejection():
     assert n_calls == 1
     assert new_records == records
     assert any("bad small-model JSON" in r for r in rejections)
+
+
+@pytest.mark.asyncio
+async def test_classify_records_isolates_one_failing_call():
+    body = (
+        "PROLOGUE intro paragraph for record A. "
+        + "Substantive content here. " * 30
+        + "Information is incorporated by reference to the proxy statement. "
+        + "Trailing closing paragraph for record A."
+    )
+    body_b = (
+        "PROLOGUE intro paragraph for record B. "
+        + "Other substantive content here. " * 30
+        + "Information is incorporated by reference to the proxy statement. "
+        + "Trailing closing paragraph for record B."
+    )
+    records = [_make_record("11", body), _make_record("12", body_b)]
+    fake_segments = [
+        {
+            "status": "extracted",
+            "starts_with": "PROLOGUE intro paragraph for record A",
+            "ends_with": "Substantive content here.",
+        },
+        {
+            "status": "incorporated_by_reference",
+            "starts_with": "Information is incorporated by reference",
+            "ends_with": "the proxy statement.",
+        },
+        {
+            "status": "extracted",
+            "starts_with": "Trailing closing paragraph for record A",
+            "ends_with": "for record A.",
+        },
+    ]
+    good_response = (
+        {"role": "assistant", "content": json.dumps({"segments": fake_segments})},
+        None,
+    )
+    fake_client = MagicMock()
+    fake_client.chat = AsyncMock(side_effect=[good_response, RuntimeError("transport boom")])
+    new_records, rejections, n_calls = await classify_records(
+        records, client=fake_client, model="x"
+    )
+    assert n_calls == 2
+    # Record 0 was split into 3 sub-records; record 1 passes through unchanged
+    assert len(new_records) == 4
+    assert any("small-model call failed" in r and "12" in r for r in rejections)
+
+
+@pytest.mark.asyncio
+async def test_classify_records_strips_markdown_json_fence():
+    body = (
+        "PROLOGUE intro fenced. "
+        + "Substantive content here. " * 30
+        + "Information is incorporated by reference to the proxy statement. "
+        + "Trailing closing fenced."
+    )
+    records = [_make_record("11", body)]
+    fake_segments = [
+        {
+            "status": "extracted",
+            "starts_with": "PROLOGUE intro fenced",
+            "ends_with": "Substantive content here.",
+        },
+        {
+            "status": "incorporated_by_reference",
+            "starts_with": "Information is incorporated by reference",
+            "ends_with": "the proxy statement.",
+        },
+        {"status": "extracted", "starts_with": "Trailing closing fenced", "ends_with": "fenced."},
+    ]
+    fenced = "```json\n" + json.dumps({"segments": fake_segments}) + "\n```"
+    fake_client = MagicMock()
+    fake_client.chat = AsyncMock(return_value=({"role": "assistant", "content": fenced}, None))
+    new_records, rejections, n_calls = await classify_records(
+        records, client=fake_client, model="x"
+    )
+    assert n_calls == 1
+    assert rejections == []
+    assert len(new_records) == 3
