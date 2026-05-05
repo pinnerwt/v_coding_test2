@@ -2,35 +2,35 @@
   {
     "label": "Berkshire 2008",
     "status": "done",
-    "steps": 12,
-    "cost_usd": 0.0229,
-    "elapsed": 35.6,
+    "steps": 26,
+    "cost_usd": 0.1024,
+    "elapsed": 116.5,
     "n_records": 20,
     "items": [
       [
         "10",
         "incorporated_by_reference",
-        126
+        426
       ],
       [
         "11",
         "incorporated_by_reference",
-        126
+        426
       ],
       [
         "12",
         "incorporated_by_reference",
-        126
+        426
       ],
       [
         "13",
         "incorporated_by_reference",
-        126
+        426
       ],
       [
         "14",
         "incorporated_by_reference",
-        126
+        426
       ],
       [
         "1",
@@ -111,28 +111,89 @@
   },
   {
     "label": "Berkshire 2002",
-    "status": "max_steps_exceeded",
-    "steps": 30,
-    "cost_usd": 0.1379,
-    "elapsed": 94.8,
-    "n_records": 0,
-    "items": []
+    "status": "done",
+    "steps": 23,
+    "cost_usd": 0.0761,
+    "elapsed": 84.9,
+    "n_records": 12,
+    "items": [
+      [
+        "1",
+        "extracted",
+        5451
+      ],
+      [
+        "2",
+        "extracted",
+        2487
+      ],
+      [
+        "3",
+        "extracted",
+        149
+      ],
+      [
+        "4",
+        "extracted",
+        691
+      ],
+      [
+        "5",
+        "extracted",
+        1169
+      ],
+      [
+        "6",
+        "extracted",
+        3396
+      ],
+      [
+        "7",
+        "extracted",
+        5352
+      ],
+      [
+        "7A",
+        "extracted",
+        140
+      ],
+      [
+        "8",
+        "extracted",
+        5336
+      ],
+      [
+        "9",
+        "not_applicable",
+        520
+      ],
+      [
+        "14",
+        "extracted",
+        1149
+      ],
+      [
+        "15",
+        "extracted",
+        9522
+      ]
+    ]
   },
   {
     "label": "Intel 2001",
     "status": "max_steps_exceeded",
     "steps": 30,
-    "cost_usd": 0.0784,
-    "elapsed": 101.2,
+    "cost_usd": 0.0847,
+    "elapsed": 110.3,
     "n_records": 0,
     "items": []
   },
   {
     "label": "Intel 2008",
     "status": "done",
-    "steps": 17,
-    "cost_usd": 0.038,
-    "elapsed": 43.7,
+    "steps": 19,
+    "cost_usd": 0.041,
+    "elapsed": 50.5,
     "n_records": 20,
     "items": [
       [
@@ -162,7 +223,7 @@
       ],
       [
         "4",
-        "not_applicable",
+        "extracted",
         79
       ],
       [
@@ -202,7 +263,7 @@
       ],
       [
         "9B",
-        "not_applicable",
+        "extracted",
         52
       ],
       [
@@ -241,17 +302,17 @@
     "label": "Citigroup 2008",
     "status": "max_steps_exceeded",
     "steps": 30,
-    "cost_usd": 0.0817,
-    "elapsed": 75.1,
+    "cost_usd": 0.0924,
+    "elapsed": 86.5,
     "n_records": 0,
     "items": []
   },
   {
     "label": "Goldman Sachs 2008",
     "status": "done",
-    "steps": 8,
-    "cost_usd": 0.0097,
-    "elapsed": 22.1,
+    "steps": 15,
+    "cost_usd": 0.0288,
+    "elapsed": 53.1,
     "n_records": 20,
     "items": [
       [
@@ -358,19 +419,120 @@
   },
   {
     "label": "AIG 2007",
-    "status": "max_steps_exceeded",
-    "steps": 30,
-    "cost_usd": 0.1505,
-    "elapsed": 142.2,
-    "n_records": 0,
-    "items": []
+    "status": "done",
+    "steps": 11,
+    "cost_usd": 0.0153,
+    "elapsed": 27.8,
+    "n_records": 20,
+    "items": [
+      [
+        "1",
+        "extracted",
+        34650
+      ],
+      [
+        "1B",
+        "extracted",
+        306
+      ],
+      [
+        "2",
+        "extracted",
+        832
+      ],
+      [
+        "4",
+        "extracted",
+        215
+      ],
+      [
+        "5",
+        "extracted",
+        5093
+      ],
+      [
+        "6",
+        "extracted",
+        5836
+      ],
+      [
+        "7",
+        "extracted",
+        36716
+      ],
+      [
+        "3",
+        "extracted",
+        75855
+      ],
+      [
+        "1A",
+        "extracted",
+        415202
+      ],
+      [
+        "7A",
+        "extracted",
+        107
+      ],
+      [
+        "8",
+        "extracted",
+        333475
+      ],
+      [
+        "9",
+        "not_applicable",
+        5
+      ],
+      [
+        "9A",
+        "extracted",
+        12243
+      ],
+      [
+        "9B",
+        "not_applicable",
+        5
+      ],
+      [
+        "10",
+        "extracted",
+        669
+      ],
+      [
+        "11",
+        "extracted",
+        213
+      ],
+      [
+        "12",
+        "extracted",
+        245
+      ],
+      [
+        "13",
+        "extracted",
+        226
+      ],
+      [
+        "14",
+        "extracted",
+        236
+      ],
+      [
+        "15",
+        "extracted",
+        35320
+      ]
+    ]
   },
   {
     "label": "AIG 2008",
     "status": "done",
-    "steps": 14,
-    "cost_usd": 0.0283,
-    "elapsed": 37.0,
+    "steps": 13,
+    "cost_usd": 0.0177,
+    "elapsed": 31.8,
     "n_records": 20,
     "items": [
       [
@@ -390,7 +552,7 @@
       ],
       [
         "3",
-        "extracted",
+        "incorporated_by_reference",
         151
       ],
       [
@@ -478,9 +640,9 @@
   {
     "label": "Lehman 2007",
     "status": "done",
-    "steps": 21,
-    "cost_usd": 0.0399,
-    "elapsed": 50.4,
+    "steps": 13,
+    "cost_usd": 0.0258,
+    "elapsed": 36.0,
     "n_records": 20,
     "items": [
       [
@@ -588,9 +750,9 @@
   {
     "label": "Bear Stearns 2007",
     "status": "done",
-    "steps": 28,
-    "cost_usd": 0.0946,
-    "elapsed": 85.8,
+    "steps": 17,
+    "cost_usd": 0.0266,
+    "elapsed": 57.3,
     "n_records": 26,
     "items": [
       [
@@ -660,7 +822,7 @@
       ],
       [
         "9",
-        "extracted",
+        "not_applicable",
         28
       ],
       [
@@ -680,7 +842,7 @@
       ],
       [
         "9B",
-        "extracted",
+        "not_applicable",
         16
       ],
       [

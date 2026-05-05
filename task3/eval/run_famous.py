@@ -42,7 +42,7 @@ def _ensure_archive(cik: str, accession: str, filename: str) -> Path:
     return entry.path
 
 
-async def _run_one(label: str, html_path: Path) -> dict:
+async def _run_one(label: str, html_path: Path, timeout_s: float) -> dict:
     from extract_agent.config import Config
     from extract_agent.llm import LLMClient
     from extract_agent.loop import run_loop
@@ -54,13 +54,24 @@ async def _run_one(label: str, html_path: Path) -> dict:
     try:
         with tempfile.TemporaryDirectory() as td:
             out = Path(td) / "out.json"
-            result = await run_loop(
-                html_path=str(html_path),
-                out_path=str(out),
-                cfg=cfg,
-                big=big,
-                small=small,
-            )
+            try:
+                result = await asyncio.wait_for(
+                    run_loop(
+                        html_path=str(html_path),
+                        out_path=str(out),
+                        cfg=cfg,
+                        big=big,
+                        small=small,
+                    ),
+                    timeout=timeout_s,
+                )
+            except TimeoutError:
+                return {
+                    "label": label,
+                    "status": "wall_timeout",
+                    "error": f"exceeded {timeout_s}s wall-clock cap",
+                    "elapsed": round(time.perf_counter() - start, 1),
+                }
             records = json.loads(out.read_text()) if out.exists() else []
         return {
             "label": label,
@@ -90,6 +101,12 @@ async def _main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--parallel", type=int, default=4)
     p.add_argument("--filter", help="Substring of label to restrict run")
+    p.add_argument(
+        "--per-case-timeout",
+        type=float,
+        default=240.0,
+        help="Wall-clock cap per filing in seconds (default 240).",
+    )
     args = p.parse_args(argv)
 
     entries = json.loads(LIST_PATH.read_text())
@@ -109,7 +126,7 @@ async def _main(argv: list[str] | None = None) -> int:
                     "error": f"{type(exc).__name__}: {exc}",
                     "elapsed": 0.0,
                 }
-            return await _run_one(e["label"], html_path)
+            return await _run_one(e["label"], html_path, args.per_case_timeout)
 
     results = await asyncio.gather(*[_wrapped(e) for e in entries])
 
