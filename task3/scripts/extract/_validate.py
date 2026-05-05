@@ -36,17 +36,51 @@ TRAILING_PAGENUM_RE = re.compile(r"\n\s*\d{1,4}\s*$")
 NUMERIC_ONLY_RE = re.compile(r"^\s*\d{1,4}\s*$")
 
 EXPECTED_ITEMS = {
-    "1", "1A", "1B", "2", "3", "4",
-    "5", "7", "7A", "8", "9A", "9B",
-    "10", "11", "12", "13", "14", "15",
+    "1",
+    "1A",
+    "1B",
+    "2",
+    "3",
+    "4",
+    "5",
+    "7",
+    "7A",
+    "8",
+    "9A",
+    "9B",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
 }
 
 # Stable display order. Items not in here are appended at the end in lexical order.
 ITEM_ORDER = [
-    "1", "1A", "1B", "1C", "2", "3", "4",
-    "5", "6", "7", "7A", "8", "9", "9A", "9B", "9C",
-    "10", "11", "12", "13", "14",
-    "15", "16",
+    "1",
+    "1A",
+    "1B",
+    "1C",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "7A",
+    "8",
+    "9",
+    "9A",
+    "9B",
+    "9C",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16",
 ]
 
 
@@ -66,7 +100,7 @@ def validate(items: list[dict]) -> list[str]:
         if len(group) < 2:
             continue
         ranges = sorted((it["char_range"][0], it["char_range"][1]) for it in group)
-        for (s1, e1), (s2, e2) in zip(ranges, ranges[1:]):
+        for (_s1, e1), (s2, _e2) in zip(ranges, ranges[1:], strict=False):
             if s2 < e1:
                 overlaps.append(num)
                 break
@@ -94,11 +128,13 @@ def validate(items: list[dict]) -> list[str]:
 
         if it["status"] == "extracted" and norm in {"none", "n/a"}:
             findings.append(
-                f"Part {it['part']} Item {it['item_number']} body='{body[:30]}' tagged extracted but is N/A"
+                f"Part {it['part']} Item {it['item_number']} body='{body[:30]}' "
+                f"tagged extracted but is N/A"
             )
         if "[Reserved]" in title and it["status"] != "reserved":
             findings.append(
-                f"Part {it['part']} Item {it['item_number']} title says [Reserved] but status={it['status']}"
+                f"Part {it['part']} Item {it['item_number']} title says [Reserved] "
+                f"but status={it['status']}"
             )
 
     # Char_range monotonicity (every record).
@@ -107,7 +143,8 @@ def validate(items: list[dict]) -> list[str]:
         s, e = it["char_range"]
         if s < last_end:
             findings.append(
-                f"Part {it['part']} Item {it['item_number']} char_range start {s} < previous end {last_end}"
+                f"Part {it['part']} Item {it['item_number']} "
+                f"char_range start {s} < previous end {last_end}"
             )
         last_end = max(last_end, e)
 
@@ -123,29 +160,34 @@ def validate(items: list[dict]) -> list[str]:
 
         if biggest["status"] == "extracted" and len(body) < 50:
             findings.append(
-                f"Item {num}: largest occurrence is only {len(body)} chars (body slice may be wrong)"
+                f"Item {num}: largest occurrence is only {len(body)} chars "
+                f"(body slice may be wrong)"
             )
         # Bare "Reserved" title (no brackets), e.g. JPM "Item 6. Reserved".
         if title.strip().lower() == "reserved" and biggest["status"] != "reserved":
             findings.append(
-                f"Part {biggest['part']} Item {num} bare 'Reserved' title but status={biggest['status']} (body={body[:30]!r})"
+                f"Part {biggest['part']} Item {num} bare 'Reserved' title "
+                f"but status={biggest['status']} (body={body[:30]!r})"
             )
         # Body of the canonical record is JUST a page number — extraction lost
         # the actual content (or the item legitimately has none and should be
         # reserved/not_applicable, not extracted).
         if body and NUMERIC_ONLY_RE.match(body) and biggest["status"] == "extracted":
             findings.append(
-                f"Part {biggest['part']} Item {num} body is page-number only ({body!r}) but status=extracted"
+                f"Part {biggest['part']} Item {num} body is page-number only "
+                f"({body!r}) but status=extracted"
             )
         # Short canonical body with company-bar / Form 10-K footer leak.
         if len(body) < 200 and ("Form 10-K" in body or PAGE_FOOTER_RE.search(body)):
             findings.append(
-                f"Part {biggest['part']} Item {num} short body looks like page-footer leak: {body[:80]!r}"
+                f"Part {biggest['part']} Item {num} short body looks like "
+                f"page-footer leak: {body[:80]!r}"
             )
         # Short canonical body with a trailing standalone page number.
         if 0 < len(body) < 200 and TRAILING_PAGENUM_RE.search(body):
             findings.append(
-                f"Part {biggest['part']} Item {num} trailing page-number leak in body: {body[-40:]!r}"
+                f"Part {biggest['part']} Item {num} trailing page-number leak "
+                f"in body: {body[-40:]!r}"
             )
 
     return findings
@@ -173,7 +215,10 @@ def inspect_item(items: list[dict], item_number: str, head: int, tail: int) -> s
     body = big["content_text"]
     out = [
         f"Part {big['part']} Item {item_number} [{big['status']}] -- {big['item_title']}",
-        f"  occurrences: {len(matches)}  longest_chars: {len(body)}  char_range: {big['char_range']}",
+        (
+            f"  occurrences: {len(matches)}  longest_chars: {len(body)}  "
+            f"char_range: {big['char_range']}"
+        ),
         f"  head ({min(head, len(body))}c): {body[:head]!r}",
     ]
     if len(body) > head + tail:
@@ -222,21 +267,26 @@ def compare_golden(actual: list[dict], golden: dict) -> list[str]:
             findings.append(
                 f"Item {num}: expected {len(expected)} sub-record(s), got {len(actual_spans)}"
             )
-            findings.append(f"  expected: {[(s['body_start'], s['body_end'], s['status']) for s in expected]}")
-            findings.append(f"  actual:   {[(s['body_start'], s['body_end'], s['status']) for s in actual_spans]}")
+            exp_layout = [(s["body_start"], s["body_end"], s["status"]) for s in expected]
+            act_layout = [(s["body_start"], s["body_end"], s["status"]) for s in actual_spans]
+            findings.append(f"  expected: {exp_layout}")
+            findings.append(f"  actual:   {act_layout}")
             continue
-        for i, (exp, act) in enumerate(zip(expected, actual_spans)):
+        for i, (exp, act) in enumerate(zip(expected, actual_spans, strict=False)):
             if exp["status"] != act["status"]:
                 findings.append(
-                    f"Item {num} span[{i}]: expected status={exp['status']!r}, got {act['status']!r}"
+                    f"Item {num} span[{i}]: expected status={exp['status']!r}, "
+                    f"got {act['status']!r}"
                 )
             if abs(exp["body_start"] - act["body_start"]) > tol:
                 findings.append(
-                    f"Item {num} span[{i}]: body_start drift {act['body_start']} vs expected {exp['body_start']} (tol={tol})"
+                    f"Item {num} span[{i}]: body_start drift {act['body_start']} "
+                    f"vs expected {exp['body_start']} (tol={tol})"
                 )
             if abs(exp["body_end"] - act["body_end"]) > tol:
                 findings.append(
-                    f"Item {num} span[{i}]: body_end drift {act['body_end']} vs expected {exp['body_end']} (tol={tol})"
+                    f"Item {num} span[{i}]: body_end drift {act['body_end']} "
+                    f"vs expected {exp['body_end']} (tol={tol})"
                 )
     return findings
 
@@ -261,8 +311,11 @@ def main() -> None:
 
     p = sub.add_parser("validate", help="Rule-based checks on one or more JSON files.")
     p.add_argument("paths", nargs="*", type=Path)
-    p.add_argument("--all", action="store_true",
-                   help="Validate every data/extracted/*.json instead of named paths.")
+    p.add_argument(
+        "--all",
+        action="store_true",
+        help="Validate every data/extracted/*.json instead of named paths.",
+    )
 
     p = sub.add_parser("summary", help="One-line-per-item summary (longest occurrence).")
     p.add_argument("path", type=Path)
@@ -286,10 +339,7 @@ def main() -> None:
     args = ap.parse_args()
 
     if args.cmd == "validate":
-        if args.all:
-            paths = sorted(Path("data/extracted").glob("*.json"))
-        else:
-            paths = args.paths
+        paths = sorted(Path("data/extracted").glob("*.json")) if args.all else args.paths
         if not paths:
             print("validate: no paths and --all not set", file=sys.stderr)
             sys.exit(2)

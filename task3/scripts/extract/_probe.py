@@ -24,9 +24,28 @@ from pathlib import Path
 # --- shared cleaner (same shape as the per-filing extractors) ---
 
 BLOCK_TAGS = {
-    "p", "div", "br", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6",
-    "table", "section", "article", "header", "footer", "ul", "ol",
-    "td", "th", "hr", "address",
+    "p",
+    "div",
+    "br",
+    "tr",
+    "li",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "table",
+    "section",
+    "article",
+    "header",
+    "footer",
+    "ul",
+    "ol",
+    "td",
+    "th",
+    "hr",
+    "address",
 }
 
 DEFAULT_PART_RE = r"^\s*PART\s+(IV|III|II|I)\b\.?"
@@ -43,12 +62,11 @@ FOOTER_HEURISTICS = [
 
 
 def clean_html(raw: str) -> str:
-    raw = re.sub(r"<(script|style|head|noscript)\b[^>]*>.*?</\1>", " ",
-                 raw, flags=re.DOTALL | re.IGNORECASE)
-    raw = re.sub(r"<ix:header\b[^>]*>.*?</ix:header>", " ",
-                 raw, flags=re.DOTALL | re.IGNORECASE)
-    raw = re.sub(r"<ix:hidden\b[^>]*>.*?</ix:hidden>", " ",
-                 raw, flags=re.DOTALL | re.IGNORECASE)
+    raw = re.sub(
+        r"<(script|style|head|noscript)\b[^>]*>.*?</\1>", " ", raw, flags=re.DOTALL | re.IGNORECASE
+    )
+    raw = re.sub(r"<ix:header\b[^>]*>.*?</ix:header>", " ", raw, flags=re.DOTALL | re.IGNORECASE)
+    raw = re.sub(r"<ix:hidden\b[^>]*>.*?</ix:hidden>", " ", raw, flags=re.DOTALL | re.IGNORECASE)
     block_pat = re.compile(
         r"<\s*/?\s*(" + "|".join(BLOCK_TAGS) + r")\b[^>]*>",
         re.IGNORECASE,
@@ -65,6 +83,7 @@ def clean_html(raw: str) -> str:
 
 
 # --- subcommand implementations ---
+
 
 def cmd_head(html_path: Path, n_bytes: int = 2000) -> str:
     return Path(html_path).read_text(encoding="utf-8", errors="replace")[:n_bytes]
@@ -104,11 +123,13 @@ def cmd_items(
             break
         start = max(0, m.start() - context)
         end = min(len(text), m.end() + context)
-        out.append({
-            "offset": m.start(),
-            "text": m.group(0).strip(),
-            "context": text[start:end].replace("\n", " "),
-        })
+        out.append(
+            {
+                "offset": m.start(),
+                "text": m.group(0).strip(),
+                "context": text[start:end].replace("\n", " "),
+            }
+        )
     return out
 
 
@@ -129,11 +150,13 @@ def cmd_find(
             break
         start = max(0, m.start() - context)
         end = min(len(text), m.end() + context)
-        out.append({
-            "offset": m.start(),
-            "match": m.group(0),
-            "context": text[start:end].replace("\n", " "),
-        })
+        out.append(
+            {
+                "offset": m.start(),
+                "match": m.group(0),
+                "context": text[start:end].replace("\n", " "),
+            }
+        )
     return out
 
 
@@ -155,6 +178,7 @@ def cmd_footers(html_path: Path) -> list[dict]:
 
 
 # --- CLI ---
+
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])

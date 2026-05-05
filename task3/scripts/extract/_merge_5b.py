@@ -44,14 +44,16 @@ VALID_STATUSES = {
     "reserved",
 }
 
-QUOTE_FOLD = str.maketrans({
-    "‘": "'",
-    "’": "'",
-    "“": '"',
-    "”": '"',
-    "–": "-",
-    "—": "-",
-})
+QUOTE_FOLD = str.maketrans(
+    {
+        "‘": "'",
+        "’": "'",
+        "“": '"',
+        "”": '"',
+        "–": "-",
+        "—": "-",
+    }
+)
 
 
 def fold(s: str) -> str:
@@ -109,14 +111,16 @@ def merge_segments(record: dict, segments: list[dict]) -> tuple[list[dict], str 
     out: list[dict] = []
     for i, (bs, st) in enumerate(merged):
         be = merged[i + 1][0] if i + 1 < len(merged) else len(body)
-        out.append({
-            "part": record["part"],
-            "item_number": record["item_number"],
-            "item_title": record["item_title"],
-            "content_text": body[bs:be],
-            "char_range": [abs_start + bs, abs_start + be],
-            "status": st,
-        })
+        out.append(
+            {
+                "part": record["part"],
+                "item_number": record["item_number"],
+                "item_title": record["item_title"],
+                "content_text": body[bs:be],
+                "char_range": [abs_start + bs, abs_start + be],
+                "status": st,
+            }
+        )
     return out, None
 
 
