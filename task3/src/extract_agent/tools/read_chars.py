@@ -28,6 +28,12 @@ def run(state, args: dict) -> dict:
     text = state.get_text(text_id)
     start = args["start"]
     end = args["end"]
+    if start < 0:
+        return {"error": f"start must be >= 0 (got {start})"}
+    if end < start:
+        return {"error": f"end must be >= start (got start={start}, end={end})"}
+    if end > len(text):
+        return {"error": f"end {end} exceeds text length {len(text)}"}
     chunk = text[start:end]
     truncated = False
     if len(chunk) > _CAP:

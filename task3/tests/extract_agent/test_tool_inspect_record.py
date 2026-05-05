@@ -45,6 +45,21 @@ def test_truncates_long_body():
     assert result["record"]["content_text_length"] == len(body)
 
 
+def test_truncated_false_when_body_short():
+    state = SessionState()
+    state.records = [_make_record("1", "short body text", (0, 15))]
+    result = inspect_record.run(state, {"index": 0})
+    assert result["truncated"] is False
+
+
+def test_truncated_true_when_body_long():
+    state = SessionState()
+    body = "A" * 4096 + "M" * 4000 + "C" * 2048  # 10144 > 6144
+    state.records = [_make_record("1", body, (0, len(body)))]
+    result = inspect_record.run(state, {"index": 0})
+    assert result["truncated"] is True
+
+
 def test_returns_neighbors():
     state = SessionState()
     state.records = [

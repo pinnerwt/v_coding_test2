@@ -30,3 +30,28 @@ def test_returns_error_on_unknown_text_id():
     result = read_chars.run(state, {"text_id": "nope", "start": 0, "end": 5})
     assert "error" in result
     assert "nope" in result["error"]
+
+
+def test_returns_error_on_negative_start():
+    state = SessionState()
+    tid = state.store_text("hello world")
+    result = read_chars.run(state, {"text_id": tid, "start": -1, "end": 5})
+    assert "error" in result
+    assert "start" in result["error"]
+
+
+def test_returns_error_on_inverted_range():
+    state = SessionState()
+    tid = state.store_text("hello world")
+    result = read_chars.run(state, {"text_id": tid, "start": 10, "end": 5})
+    assert "error" in result
+    assert "end" in result["error"]
+    assert "start" in result["error"]
+
+
+def test_returns_error_on_end_past_length():
+    state = SessionState()
+    tid = state.store_text("hello world")
+    result = read_chars.run(state, {"text_id": tid, "start": 0, "end": 999})
+    assert "error" in result
+    assert "exceeds text length" in result["error"]

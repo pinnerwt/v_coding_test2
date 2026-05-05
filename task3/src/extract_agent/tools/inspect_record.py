@@ -40,7 +40,8 @@ def run(state, args: dict) -> dict:
         return {"error": f"index {i} out of range (n_records={len(records)})"}
     r = records[i]
     body = r.get("content_text", "")
-    preview = body[:_HEAD] + _SENTINEL + body[-_TAIL:] if len(body) > _THRESHOLD else body
+    is_long = len(body) > _THRESHOLD
+    preview = body[:_HEAD] + _SENTINEL + body[-_TAIL:] if is_long else body
     record_meta = {
         "part": r.get("part"),
         "item_number": r.get("item_number"),
@@ -52,6 +53,7 @@ def run(state, args: dict) -> dict:
     return {
         "record": record_meta,
         "body_preview": preview,
+        "truncated": is_long,
         "neighbor_above": _neighbor(records, i - 1),
         "neighbor_below": _neighbor(records, i + 1),
     }
