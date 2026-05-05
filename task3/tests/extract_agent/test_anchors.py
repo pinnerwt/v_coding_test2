@@ -54,3 +54,43 @@ def test_anchor_empty_title_when_absent():
     # Title may be empty or "Business" depending on regex; both acceptable —
     # the slicer's "next non-empty line" fallback handles empty titles.
     assert anchors[0]["title"] in ("", "Business")
+
+
+def test_case_insensitive_item_keyword():
+    # ITEM_RE uses re.IGNORECASE — all casings of the keyword should match.
+    for kw in ("ITEM", "Item", "item"):
+        text = f"{kw} 1. Business\nbody"
+        anchors = find_anchors(text)
+        assert [a["item_number"] for a in anchors] == ["1"]
+
+
+def test_dedupe_keeps_toc_when_no_body_anchor_exists():
+    # If every anchor for an item is in the TOC region, dedupe must keep it.
+    anchors = [
+        {"item_number": "2", "match_start": 500, "match_end": 520, "title": "Properties"},
+    ]
+    deduped = dedupe_anchors(anchors, toc_region_end=8000)
+    assert len(deduped) == 1
+    assert deduped[0]["match_start"] == 500
+    assert deduped[0]["item_number"] == "2"
+
+
+def test_find_anchors_empty_input():
+    assert find_anchors("") == []
+
+
+def test_skips_letter_outside_a_to_c():
+    # Regex letter class is [A-C] — "1D" should not match.
+    text = "Item 1D. Foo\nbody"
+    assert find_anchors(text) == []
+    # Positive control: "1A" on the same shape does match.
+    anchors = find_anchors("Item 1A. Foo\nbody")
+    assert [a["item_number"] for a in anchors] == ["1A"]
+
+
+def test_toc_dot_leader_title_captured():
+    # TOC lines often have dot leaders + page number; title capture folds them in.
+    text = "Item 1.    Business ............ 5\nbody"
+    anchors = find_anchors(text)
+    assert [a["item_number"] for a in anchors] == ["1"]
+    assert "Business" in anchors[0]["title"]
