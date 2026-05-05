@@ -27,3 +27,5 @@ Try the agent and compare with the output from the skill.
 Tune the system prompt to avoid max steps
 
 Tune the prompt to avoid classification errors.
+
+pick 10 and run them. Look on the internet for the most famous 10k documents which are hard to handle programatically.
