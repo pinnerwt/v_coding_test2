@@ -1,9 +1,10 @@
-from . import clean_and_load, find_anchors, slice_items
+from . import clean_and_load, find_anchors, slice_items, validate_records
 
 REGISTRY = {
     "clean_and_load": clean_and_load,
     "find_anchors": find_anchors,
     "slice_items": slice_items,
+    "validate_records": validate_records,
 }
 
 
