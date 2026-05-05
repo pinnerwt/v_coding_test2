@@ -72,7 +72,7 @@ async def run_loop(
         if state.cost_usd >= cfg.cost_ceiling_usd:
             return {"status": "cost_exceeded", "state": state, "messages": messages}
 
-        msg, usage = await big.chat(messages, tools=schemas, reasoning=True)
+        msg, usage = await big.chat(messages, tools=schemas, reasoning=True, temperature=0)
         state.add_cost(_estimate_cost(usage, cfg.big_model))
         messages.append(msg)
 
