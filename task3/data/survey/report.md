@@ -1,0 +1,41 @@
+# Task 3 — SEC 10-K survey
+
+## A. Modern inline-XBRL
+
+| Filer | CIK | Accession | Filing date | Primary doc | Content-Type | Ext | Bytes | Sniffed |
+|---|---|---|---|---|---|---|---|---|
+| Apple | 320193 | 0000320193-23-000106 | 2023-11-03 | aapl-20230930.htm | text/html | htm | 1558924 | inline_xbrl |
+| Microsoft | 789019 | 0000950170-23-035122 | 2023-07-27 | msft-20230630.htm | text/html | htm | 9963591 | inline_xbrl |
+| NVIDIA | 1045810 | 0001045810-24-000029 | 2024-02-21 | nvda-20240128.htm | text/html | htm | 2085566 | inline_xbrl |
+
+## B. Heavy 'incorporated by reference'
+
+| Filer | CIK | Accession | Filing date | Primary doc | Content-Type | Ext | Bytes | Sniffed |
+|---|---|---|---|---|---|---|---|---|
+| Berkshire Hathaway | 1067983 | 0001193125-26-083899 | 2026-03-02 | brka-20251231.htm | text/html | htm | 10396820 | inline_xbrl |
+| JPMorgan Chase | 19617 | 0001628280-26-008131 | 2026-02-13 | jpm-20251231.htm | text/html | htm | 12927325 | inline_xbrl |
+| ExxonMobil | 34088 | 0000034088-26-000045 | 2026-02-18 | xom-20251231.htm | text/html | htm | 5591068 | inline_xbrl |
+
+## C. Older HTML, pre-XBRL
+
+| Filer | CIK | Accession | Filing date | Primary doc | Content-Type | Ext | Bytes | Sniffed |
+|---|---|---|---|---|---|---|---|---|
+| IBM | 51143 | 0001558370-20-001334 | 2020-02-25 | ibm-20191231x10k2af531.htm | text/html | htm | 1585261 | inline_xbrl |
+| General Electric | 40545 | 0000040545-19-000014 | 2019-02-26 | ge10-k2018.htm | text/html | htm | 6977548 | html |
+| Coca-Cola | 21344 | 0000021344-18-000008 | 2018-02-23 | a2017123110-k.htm | text/html | htm | 4669933 | html |
+
+## D. Small-cap / recent IPO
+
+| Filer | CIK | Accession | Filing date | Primary doc | Content-Type | Ext | Bytes | Sniffed |
+|---|---|---|---|---|---|---|---|---|
+| Palantir | 1321655 | 0001321655-26-000011 | 2026-02-17 | pltr-20251231.htm | text/html | htm | 2192014 | inline_xbrl |
+| Reddit | 1834584 | 0001834584-24-000023 | 2024-02-28 | cpng-20231231.htm | text/html | htm | 2126954 | inline_xbrl |
+| Rivian | 1874178 | 0001874178-26-000008 | 2026-02-12 | rivn-20251231.htm | text/html | htm | 2225976 | inline_xbrl |
+
+## E. Older plain-text
+
+| Filer | CIK | Accession | Filing date | Primary doc | Content-Type | Ext | Bytes | Sniffed |
+|---|---|---|---|---|---|---|---|---|
+| IBM | 51143 | 0001558370-20-001334 | 2020-02-25 | ibm-20191231x10k2af531.htm | text/html | htm | 1585261 | inline_xbrl |
+| General Electric | 40545 | 0000040545-19-000014 | 2019-02-26 | ge10-k2018.htm | text/html | htm | 6977548 | html |
+| Microsoft | 789019 | 0001564590-20-034944 | 2020-07-30 | msft-10k_20200630.htm | text/html | htm | 6623045 | inline_xbrl |

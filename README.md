@@ -1,162 +1,8 @@
-# Coding test - web agent
-
-## Evaluation
-
-The agent is evaluated along three axes:
-
-1. **Task success rate**
-   - Whether the agent completes the task correctly end-to-end
-   - Measured using a small but diverse benchmark set (multi-site, multi-step tasks)
-
-2. **Failure modes**
-   - Categorized into:
-     - hallucination (answer before observing)
-     - incorrect tool usage
-     - stuck / looping behavior
-     - selector / UI mismatch
-   - Benchmarks are designed to intentionally trigger these cases. Used webvoyager for simplicity and clear Q&A form.
-
-3. **Efficiency**
-   - Token usage per task
-   - Latency (number of steps / tool calls)
-
-### Method
-
-- All benchmark runs are logged with traces
-- Failures are manually triaged and recorded in `observations.md`
-- Fixes are validated by re-running failed cases
-
-This forms a lightweight but iterative eval loop:
-benchmark → failure triage → fix → re-run
-
-## Failure Analysis
-
-Common failure patterns observed:
-
-- **Hallucination**
-  - Agent answers before observing the page
-  - Mitigated by gating answer/tool usage based on observed content
-
-- **Tool misuse**
-  - Incorrect sequence of actions (e.g., clicking before locating)
-  - Reduced via stricter tool abstraction and loop design
-
-- **Looping**
-  - Agent repeatedly calls similar tools without progress
-  - Partial mitigation via loop detection and retry strategies
-
-- **Overuse of read()**
-  - Triggered when the model is uncertain
-  - Addressed via caching + offset-based context reuse
-
-These failures are tracked and iterated through benchmark triage.
-
-## Key Design Tradeoffs
-
-### 1. DOM-based interaction vs Vision-based interaction
-
-- DOM-based (current approach)
-  - Pros: lower token cost, structured interaction
-  - Cons: brittle to UI changes
-
-- Vision-based (explored)
-  - Pros: more robust, simpler action space
-  - Cons: extremely high token cost
-
-→ Chose DOM-based for cost efficiency
-
----
-
-### 2. Full-page context vs Chunked (Agentic RAG)
-
-- Chunked approach reduces token usage
-- But loses positional information (e.g., "third headline")
-
-→ Abandoned chunking for tasks requiring ordering
-
----
-
-### 3. Handling anti-bot / login walls
-
-- Not handled in current version
-- Would require:
-  - clean IP
-  - real browser (xvfb)
-  - human-like interaction
-
-→ Explicitly out of scope due to complexity and cost
-
----
-
-### 4. Architecture simplification
-
-- Removed planner/loop separation from first attempt
-- Merged into a single loop for:
-  - lower complexity
-  - better iteration speed
-
-→ Tradeoff: less modular, but more practical
-
----
-
-### 5. Other design decisions
-
-**Loop / control**
-- Mandatory `reason` field on every tool call; unbounded narrative history rendered in the system prompt — guards (goto allowlist, anti-loop) ground decisions in stated reasons.
-- Separate `reason()` scratchpad tool; agent-callable `note()` was removed.
-- Unified force-done via LLM at three triggers (max_steps, no_progress, asked-state giveup).
-- Tried-and-killed: plateau interrupt machinery (reverted as net-negative).
-
-**Tools / observation**
-- `read_grep`: paginated with offset markers, per-line hash dedup, hidden after 3 duplicate outputs.
-- Auto-advance for `read` and `list_interactive` on cache hits; tools hidden once exhausted.
-- `GlobalTextCache` + `OffsetCache` + small page-diff injection on DOM mutation.
-- AX-tree snapshot enriched with placeholder, `expanded`/`disabled`/`checked`/`selected`, `href`, listbox-option admission.
-- `click` and `select_option` unified into `click(id, value=None)`; fast-fail on stale `eid`.
-
-**Hallucination defenses**
-- `done(success)` requires verbatim evidence validated against the live tape; ungrounded success is downgraded.
-- `goto` constrained to URLs grounded in observed content (not args/reasons); SSRF block on unsafe URLs.
-- Distilled `url_notes` keyed by site root and framed as untrusted page-derived data for the next session.
-
-**Infra / observability**
-- Per-call LLM sidecar logs (`*.llm.jsonl`) consumed by `cost_report.py` with role attribution.
-- Persistent `metrics_history.jsonl` with Δ-vs-prev; `bench-sweep` and `bench-failure-triage` skills institutionalize the eval loop.
-- Parallel agent sessions with queue-aware concurrency matched to the server semaphore.
-- SPA UI + JSON endpoints (replaced `/replay` HTML); bearer-token auth + SPA passcode gate.
-- Deployment: SSH-based Docker CD via `pinner.top` (joins `deploy_default` network), not Zeabur.
-
-**LLM choice**
-- DeepSeek `deepseek-chat` default, reasoning OFF; kept as a one-env-var swap from the original Qwen target.
-
-## How to run
-### Server
-```bash
-# exports the env vars from .env (notably DEEPSEEK_API_KEY) so the uvicorn process inherits them 
-cd task2/
-set -a && . ./.env && set +a && AGENT_RESTRICT_GOTO=true uv run uvicorn agent.server:app_factory --factory --host 127.0.0.1 --port 8001
-```
-
-Then connect to http://127.0.0.1:8001/
-
-### Cost analysis
-```bash
-uv run python scripts/cost_report.py --all
-```
-
-## Where AI helped me
-1. Implement the TDD/e2e tests
-2. Implement all the codes. 0 codes were written by me.
-3. Created a skill to 
-  - restart the server (update the code module after fixes)
-  - run latest failed benchmark results
-  - identify any hallucination first. However this parts often failed without human in the loop.
-  - identify loops in agent.
-  - Write down the observations. The fix are often wrongly identified in last try and thus we need to plan further and add more human insight for the design part.
-4. Brainstorming on different topics, but felt that it spotted the wrong error in most of time.
-5. Also asked AI to search on internet on certain design decisions, for the hallucination part. It suggests gating "goto" or "answer" with what we didn't see and it works fine in benchmarks.
-
 # vici — AI Coding Test
+
+### Evaluation, Failure Analysis, Key Design Tradeoffs
+- [task2](task2/README.md) — browser automation agent
+- [task3](task3/README.md) — SEC 10-K item-level extraction
 
 [![Python](https://img.shields.io/badge/python-3.11-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![uv](https://img.shields.io/badge/uv-0.9.3-261230?logo=python&logoColor=white)](https://github.com/astral-sh/uv)
@@ -173,9 +19,9 @@ This repo is a second-pass attempt at the three tasks defined in [`AI-Coding-Tes
 |----|------------------------------------------------|----------------|------------------------|
 | 1  | GitHub CI/CD as Claude Skills                  | not started    | —                      |
 | 2  | Generalized Browser Automation Agent           | in progress    | [`task2/`](task2/)     |
-| 3  | SEC 10-K Item-level Structured Extraction      | not started    | —                      |
+| 3  | SEC 10-K Item-level Structured Extraction      | in progress    | [`task3/`](task3/)     |
 
-Zeabur URL lands in `task2/README.md` once deployed.
+Zeabur URLs: task 2 lands in `task2/README.md` once deployed; task 3 is deployed at `api.pinner.top` (shared host with task 2 — see [`task3/README.md`](task3/README.md#zeabur)). Task 3 has no CI/CD wired up; the `task2-ci.yml` workflow is task-2-only.
 
 ## Repository layout
 
@@ -187,7 +33,8 @@ Zeabur URL lands in `task2/README.md` once deployed.
 ├── observations.md            # running notes from /bench-failure-triage
 ├── docs/                      # design docs and plans
 ├── prompts/                   # key prompts used to drive development
-└── task2/                     # browser automation agent (uv project)
+├── task2/                     # browser automation agent (uv project)
+└── task3/                     # SEC 10-K item-level extraction (uv project)
 ```
 
 ## Quick start (task 2)
@@ -205,6 +52,26 @@ set -a && . ./.env && set +a && \
 
 See [`task2/README.md`](task2/README.md) for env vars, Docker, Zeabur, and architecture notes.
 
+## Quick start (task 3)
+
+```bash
+cd task3
+uv sync
+uv run pytest -v                       # unit + integration + eval helpers
+uv run ruff check .
+uv run python -m extract_agent --help
+```
+
+Single filing by CIK + accession (resolved via `data/index.json`):
+
+```bash
+uv run python -m extract_agent \
+  --cik 320193 --accession 0000320193-23-000106 \
+  --out data/extracted/320193-000032019323000106.json
+```
+
+See [`task3/README.md`](task3/README.md) for the full eval surface (regression / famous-hard / Cat E 1995 SGML), failure analysis, design tradeoffs, the HTTP API, and Docker / Zeabur notes.
+
 ## Development workflow
 
 - **TDD is non-negotiable.** Red → green → refactor. Bug fixes start with a regression test. Eval sets count as tests for tasks 2 and 3. See [`CLAUDE.md`](CLAUDE.md).
@@ -216,6 +83,8 @@ See [`task2/README.md`](task2/README.md) for env vars, Docker, Zeabur, and archi
 ## CI/CD
 
 [`task2-ci.yml`](.github/workflows/task2-ci.yml) runs on pushes to `main` and PRs targeting `main` that touch `task2/**` or the workflow itself. It installs `uv`, syncs deps with `--frozen`, installs Chromium for Playwright, then runs `ruff check`, `ruff format --check`, and `pytest --cov=agent --cov-report=xml:../artifacts/coverage.xml`. The XML report is committed at [`artifacts/coverage.xml`](artifacts/coverage.xml) (also uploaded as the `task2-coverage` workflow artifact). Concurrency is keyed by ref so superseded runs cancel themselves.
+
+Task 3 has no CI workflow — `uv run pytest` and `uv run ruff check .` from `task3/` are the local gates.
 
 ## Dependabot
 
@@ -244,12 +113,15 @@ CI overwrites the same file on every PR and also uploads it as the `task2-covera
 The `prompts/` directory is the AI-collaboration record reviewers read:
 
 - [`prompts/task2.md`](prompts/task2.md) — the task 2 seed prompt and the resulting plan.
+- [`prompts/task3.md`](prompts/task3.md) — the task 3 seed prompt and the resulting plan.
+- [`task3/prompts/brainstorming.md`](task3/prompts/brainstorming.md) — task 3 brainstorming prompt.
 
 ## Deployment
 
 Each task is deployed as a public service on [Zeabur](https://zeabur.com/) per the brief.
 
 - task 2: see [`task2/README.md`](task2/README.md#zeabur). Build config in `task2/Dockerfile`. Persistent volume must be mounted at `/app/data` (URL notes + traces). Deploy URL: _to be filled in._
+- task 3: see [`task3/README.md`](task3/README.md#zeabur). Build config in `task3/Dockerfile`. Container exposes `sec_toolbox.api:app` on port 8080 (filing fetch + extraction). Deploy URL: `api.pinner.top` (shared host with task 2).
 
 ## Contributing / collaborating
 

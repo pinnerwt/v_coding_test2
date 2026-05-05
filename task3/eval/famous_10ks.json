@@ -1,0 +1,72 @@
+[
+  {
+    "label": "Berkshire 2008",
+    "cik": "1067983",
+    "accession": "0001193125-09-042055",
+    "filename": "d10k.htm",
+    "why_hard": "Long Buffett-style narrative integrated with 10-K body; Item 7 woven through chairman's letter."
+  },
+  {
+    "label": "Berkshire 2002",
+    "cik": "1067983",
+    "accession": "0000950150-03-000377",
+    "filename": "a88664e10vk.htm",
+    "why_hard": "Pre-SOX-era Berkshire with idiosyncratic Buffett-letter integration and minimal Item-style headings."
+  },
+  {
+    "label": "Intel 2001",
+    "cik": "50863",
+    "accession": "0000912057-02-009698",
+    "filename": "a2072777z10-k.htm",
+    "why_hard": "Pre-SOX Intel using older table-based HTML; non-sequential Item 1/Item ordering."
+  },
+  {
+    "label": "Intel 2008",
+    "cik": "50863",
+    "accession": "0000891618-09-000047",
+    "filename": "f50771e10vk.htm",
+    "why_hard": "Modern Intel filing with known non-sequential Item 1 layout."
+  },
+  {
+    "label": "Citigroup 2008",
+    "cik": "831001",
+    "accession": "0001193125-09-041237",
+    "filename": "d10k.htm",
+    "why_hard": "Crisis-era Citi with famous scattered Item 7 MD&A across many subsections; massive document."
+  },
+  {
+    "label": "Goldman Sachs 2008",
+    "cik": "886982",
+    "accession": "0000950123-09-001278",
+    "filename": "y74032e10vk.htm",
+    "why_hard": "Crisis-era Goldman Sachs; complex bank disclosure structure with heavy IBR."
+  },
+  {
+    "label": "AIG 2007",
+    "cik": "5272",
+    "accession": "0000950123-08-002280",
+    "filename": "y44393e10vk.htm",
+    "why_hard": "Pre-collapse AIG (FY2007); enormous filing with insurance-segment sprawl."
+  },
+  {
+    "label": "AIG 2008",
+    "cik": "5272",
+    "accession": "0000950123-09-003734",
+    "filename": "y74794e10vk.htm",
+    "why_hard": "Post-bailout AIG with restated/expanded risk and going-concern disclosures."
+  },
+  {
+    "label": "Lehman 2007",
+    "cik": "806085",
+    "accession": "0001104659-08-005476",
+    "filename": "a08-3530_110k.htm",
+    "why_hard": "Final Lehman 10-K before collapse; broker-dealer disclosures notoriously hard to align."
+  },
+  {
+    "label": "Bear Stearns 2007",
+    "cik": "777001",
+    "accession": "0000914121-08-000077",
+    "filename": "be11750956-10k.txt",
+    "why_hard": "Last Bear Stearns 10-K, filed weeks before collapse; primary doc is plain .txt SGML-era format."
+  }
+]

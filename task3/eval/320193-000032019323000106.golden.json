@@ -1,0 +1,19 @@
+{
+  "_doc": "Hand-labelled status spans for items where Phase 5b is expected to split (or NOT split) a single rule-extracted body. Items not listed here are expected to remain a single sub-record matching the rule output. body_start/body_end are offsets within the rule-extracted item's content_text.",
+  "_filing": "Apple 10-K, fiscal 2023 (cik=320193, accession=0000320193-23-000106)",
+  "boundary_tolerance_chars": 20,
+  "items": [
+    {
+      "item_number": "1",
+      "item_title": "Business",
+      "expected_spans": [
+        {
+          "body_start": 0,
+          "body_end": 15006,
+          "status": "extracted",
+          "note": "negative test: body contains the phrase 'not incorporated by reference' near the end (websites disclaimer, body ~14860). Splitter must NOT classify this as IBR — the negation flips the meaning. Whole body is substantive Business disclosure, single extracted span."
+        }
+      ]
+    }
+  ]
+}
