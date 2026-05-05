@@ -6,4 +6,4 @@ __pycache__/
 data/raw/
 data/index.json
 data/extracted/
-task3/scripts/extract/*-*.py
+scripts/extract/*-*.py

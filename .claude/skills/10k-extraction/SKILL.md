@@ -31,36 +31,58 @@ If only a company name or year is given, ask once for CIK + accession or a path.
 
 ## Workflow
 
-1. **Resolve input** to a local HTML path under `task3/data/raw/archive/...`.
-2. **Pick stable identifiers**: `<cik>` and `<accession-no-dashes>` (strip the dashes from the accession number).
-3. **Author script** at `task3/scripts/extract/<cik>-<accession>.py`. Create parent dirs if needed. Each script is self-contained: stdlib only by default, `argparse` CLI taking `<html_path> --out <json_path>`. See **Authoring guidance** below.
-4. **Run it** from `task3/`:
-   ```bash
-   cd task3 && uv run python scripts/extract/<cik>-<accession>.py \
-       <html_path> --out data/extracted/<cik>-<accession>.json
-   ```
-5. **Validate** the output JSON (see **Validation** below). If validation flags issues, do **not** silently retry — report the issues to the user with the script path so the next iteration can edit it.
-6. **Return** the JSON path + a one-line-per-item summary: `Part {p} Item {n} [{status}] -- {title} ({len content_text} chars)`.
+The skill runs as a chain of phases. Two of them — diagnostics and validation — produce a lot of probe/log output that would pollute main context if read directly; dispatch those to an `Explore` subagent and read only its summary. The authoring and run phases stay in the main thread because they're where judgment lives (which constants to tune, when to apply the anti-benchmaxxing checks at the bottom of this file).
 
-## Diagnostic pass first (do this BEFORE writing the script body)
+| Phase | Where it runs | Why |
+|---|---|---|
+| 1. Resolve input | Main thread | Trivial lookup in `task3/data/index.json` |
+| 2. Pick identifiers | Main thread | `<cik>` + `<accession-no-dashes>` (strip dashes) |
+| 3. **Diagnostic pass** | **Explore subagent** | Probes emit ~10KB+ output per filing; main thread only needs the structural summary |
+| 4. Author script | Main thread | Decision-making phase — must see prior conversation, prior filings' scripts, and the anti-benchmaxxing rules |
+| 5. Run script | Main thread | One-line bash; cheap |
+| 6. **Validation pass** | **Explore subagent** | Reads the full JSON + runs `_validate.py`; main thread only needs the grouped findings |
+| 7. Report | Main thread | Synthesizes the diagnostic summary, the run output, and the validation findings into the user-facing reply |
 
-Most extraction bugs come from a small number of structural traits of the HTML. Spot the traits first, then design the script — don't write a naive extractor and iterate against validation findings (that wastes tokens and obscures the cause).
+**Run command** (phase 5):
+```bash
+cd task3 && uv run python scripts/extract/<cik>-<accession>.py \
+    <html_path> --out data/extracted/<cik>-<accession>.json
+```
 
-Use the diagnostic CLI at `task3/scripts/extract/_probe.py` rather than ad-hoc Python one-liners. It exposes the probes below as subcommands (`head`, `clean-head`, `anchors`, `items`, `find`, `footers`), with `--part-re` / `--item-re` overrides on `anchors` and `items` for testing alternate patterns against a new filing without editing code.
+**When NOT to delegate** (authoring, phase 4): a subagent doesn't see the conversation history. It can't tell whether a quirk in this filing is genuinely new or the third time we've seen JPM-style cross-refs, and it won't apply the "How to edit this skill" discipline at the bottom of this file when deciding whether to add a constant to the per-filing script vs. promote it. Keep authoring in the main thread.
 
-Run these probes against the raw HTML and the cleaned text. They are cheap and answer the questions that drive every subsequent design choice:
+If validation flags issues, do **not** silently retry — report the issues with the script path so the next iteration can edit it.
 
-1. **Inline-XBRL or not?** `head -c 2000 <html>`. If you see `xmlns:ix="..."`, `<ix:header>`, `<ix:hidden>`, the cleaner must drop those wrappers (their nonNumeric values will pollute the cleaned text otherwise).
-2. **Cleaner sanity**: print `len(cleaned_text)` and the first ~2KB. Confirm headings appear at the start of lines and that line breaks separate logical sections.
-3. **Count PART anchors**: `len(list(PART_RE.finditer(text)))`. **If > ~5, the document has page-running headers** (every rendered page starts with "PART I" / "Item 1A"). This single fact dictates the slicing rule (see §4 below).
-4. **Sample ITEM anchors**: print every match with 60 chars of context. Look for:
-   - Bare `Item 1` lines with no period — running headers; the regex must require trailing punctuation.
-   - `Item 1.\n\nBusiness` with the title on a separate line — TOC style; the regex must allow `\s*` (which spans `\n`) between the period and the title.
-   - `ITEM 1. BUSINESS` all-caps on one line — body heading; the canonical case.
-   - Numbers > 16 — bogus matches; constrain `(\d{1,2})` to `(1[0-6]|[1-9])`.
-5. **Look for page footers**: `grep` the cleaned text for the company name + "Form 10-K" + page number patterns (e.g. `Apple Inc. | 2023 Form 10-K | 16`, `Coupang, Inc.\n\n2023 Form 10-K\n\n41\n\nTable of Contents`). These leak into short Items (Mine Safety, [Reserved], 9C) — either strip in the cleaner or trim post-extract.
+Final reply to user: JSON path + a one-line-per-item summary (`Part {p} Item {n} [{status}] -- {title} ({len content_text} chars)`) + a `Findings` section with whatever the validation subagent surfaced.
 
-Capture the answers in the script's module docstring (one or two lines: "running headers: yes; heading case: ALL CAPS; page footer: 'Company | Year Form 10-K | <n>'"). This is the per-filing tailoring the skill exists to encode.
+### Phase 3 dispatch (Diagnostic pass — Explore subagent)
+
+The phase file `.claude/skills/10k-extraction/phase3-diagnostic.md` is the entire context the subagent needs. Dispatch with a prompt of the form:
+
+```
+Read .claude/skills/10k-extraction/phase3-diagnostic.md and follow it.
+
+Inputs:
+  html_path: <absolute path under task3/data/raw/archive/...>
+  cik:       <cik>
+  accession: <accession-no-dashes>
+```
+
+The subagent returns a ≤200-word structural summary. Use it to inform Phase 4 (authoring).
+
+### Phase 6 dispatch (Validation pass — Explore subagent)
+
+The phase file `.claude/skills/10k-extraction/phase6-validation.md` is the entire context the subagent needs. Dispatch with a prompt of the form:
+
+```
+Read .claude/skills/10k-extraction/phase6-validation.md and follow it.
+
+Inputs:
+  json_path:   task3/data/extracted/<cik>-<accession>.json
+  script_path: task3/scripts/extract/<cik>-<accession>.py
+```
+
+The subagent returns a ≤150-word findings list (Errors / Warnings / OK). Surface this verbatim in the user-facing reply under a `Findings` heading.
 
 ## Authoring guidance (what the per-filing script must do)
 
@@ -102,7 +124,8 @@ The backbone is the same across filings. The per-filing tweaks live in the regex
    }
    ```
 
-4. **Deduplicate to one record per item — keep the longest body.** TOC stubs are a navigation aid, not output. Group anchors by `item_number` and emit only the occurrence with the longest sliced body (this is, in practice, the body heading; TOC stubs slice between adjacent TOC lines and yield ~1–3 char page-number bodies). The output JSON has one record per item.
+4. **Deduplicate to one record per item — drop TOC anchors first, then keep the longest body.** TOC stubs are a navigation aid, not output. The naive "longest body wins" rule fails when both candidates are tiny — e.g. Item 6 `[Reserved]` where the body anchor slices 0 chars (next heading is immediately adjacent) and the TOC anchor slices ~20 chars (the page-number stub). The TOC version then wins by length and yanks `char_range` back to the TOC region, breaking monotonicity.
+   - Use a TOC-region threshold (typically 8000 chars; pick from the diagnostic pass — TOC anchors cluster in the first ~5–8KB). For each `item_number`, if any anchor has `match_start > TOC_REGION_END`, drop all anchors with `match_start ≤ TOC_REGION_END` from that item's pool. Then take the longest body from what remains.
    - Tag each anchor's `part` from the canonical `ITEM_TO_PART` map (not from the most-recent `PART` anchor — see §5 below for why).
    - Drop matches whose item number isn't in the canonical map (defensive against the rare stray `ITEM 60` style false positive that survives the regex).
    - If a body item legitimately splits across the document (rare — typically only Item 8 financial statements), keep the longest contiguous slice; downstream consumers expect a single `[start, end]` per item.
@@ -114,12 +137,15 @@ The backbone is the same across filings. The per-filing tweaks live in the regex
    - **Why ITEM-only, not ITEM+PART**: page-running headers repeat `PART I` at the top of every rendered page. Treating PART matches as boundaries truncates Item 1's body at the first page break (e.g. MSFT's Business section drops from ~70KB to ~3KB). Items are sequential within and across Parts, so the next ITEM anchor is always a safe boundary.
    - `body_start` = `text.find('\n', heading_match.end())` (end of heading line). `next_start` = next item anchor start. `char_range = [body_start, next_start]`.
    - If the captured title was empty, fall back to the next non-empty line within ~200 chars after `body_start`.
+   - **Trim trailing standalone page numbers from short bodies** before saving: `if len(body) < 500: body = re.sub(r"\n+\s*\d{1,4}\s*$", "", body).rstrip()`. Plain page-number leak is more common than the company-bar variant — short items (Mine Safety, [Reserved], 9C, "Refer to Item 10.") consistently end with `"\n\n32"`-style page numbers because the next heading sits right after the page break. The 500-char gate matters: on a 39K-char Item 1 body, the same regex could chop a legitimate trailing standalone number (table footnote ref, year `2025`, etc.); the leak only happens when the next heading sits adjacent to a page break, which only happens on items short enough to fit on one or two rendered pages.
 
 6. **Classify status** for each item using these rules, in order:
    - `incorporated_by_reference` — body contains "incorporated" within ~5 words of "by reference" in the first ~800 chars **and** body length < 4000 chars. Allow intervening words: `r"incorporat\w*(?:\s+\w+){0,5}\s+by\s+reference"` — filings write "incorporated **herein** by reference", and the bare `incorporated by reference` regex misses these.
-   - `reserved` — heading title text is `[Reserved]` (bracketed) **or** body matches `\breserved\b` near the start with body length < 1500.
+   - `reserved` — heading title (trimmed, lowercased) is `"[reserved]"` **or** `"reserved"` (JPM-style filings drop the brackets) **or** body matches `\breserved\b` near the start with body length < 1500.
    - `not_applicable` — body matches `\bnot\s+applicable\b` near the start with length < 1500, **or** body is just `None.` / `None` / `N/A` (case-insensitive, after trim).
    - else `extracted`.
+
+   **Don't transitively classify `incorporated_by_reference`.** A body that says `"Refer to Item 10."`, `"Refer to Note 30"`, or `"Refer to pages 165–314."` is an *internal* cross-reference within the same 10-K. The substantive content lives elsewhere in the document, not in another SEC filing. These stay `extracted` (the body is what it literally is — short, but extracted faithfully). Only the explicit "incorporated … by reference" phrasing triggers IBR. Reasoning: the status field has to be mechanical to be auditable; once it interprets cross-references transitively, two readers will disagree about edge cases (Item 10 itself often half-points to the proxy and half-prints the executive officers list, so "Items 11–14 are IBR via Item 10" is itself ambiguous).
 
 7. **CLI contract**: `argparse` with positional `html_path`, `--out` required. Write the JSON array to `--out`; print a short summary to stdout (item count, parts seen).
 
@@ -133,27 +159,30 @@ The design choices above each defend against a specific failure mode observed in
 |---|---|---|
 | Bare `Item 1` page running headers matched as anchors | Item count 30–40+; massive char gaps inside Part I | `ITEM_RE` requires `[\.\:]` trailing punctuation |
 | `PART I` page running headers used as slice boundaries | Item bodies truncated to ~3KB despite huge underlying section | Slice on ITEM anchors only; PART used solely for `part` assignment |
-| TOC heading wins over body heading | Empty / very short Item bodies; titles look like TOC fragments | Dedup-by-last across the document |
+| TOC heading wins over body heading | Empty / very short Item bodies; titles look like TOC fragments | Drop TOC-region anchors first (`match_start ≤ ~8000`) when any later anchor exists, then take longest body |
+| Both TOC and body candidates tiny → TOC wins by length, breaks monotonicity | Validator: `Item N char_range start <small> < previous end <large>` | Same TOC-region drop rule above (Item 6 `[Reserved]` is the canonical case — JPM 2025) |
+| Reserved item with unbracketed `Reserved` title tagged `extracted` | `Item 6 [extracted] -- Reserved (0–2 chars)` | Classifier accepts `[reserved]` **or** `reserved` as title text |
+| Trailing standalone page numbers leak into short item bodies | `Item 4 [not_applicable]` body = `"Not applicable.\n\n32"` | Strip `r"\n+\s*\d{1,4}\s*$"` post-extract **only when `len(body) < 500`** — long bodies might legitimately end in a standalone number (year, table footnote ref) |
+| Internal cross-references look like extractor bugs | Items 1C / 3 / 7 / 7A / 8 / 11 / 13 / 14 with 17–300 char bodies that say `"Refer to Item 10."` / `"Refer to Note 30"` / `"Refer to pages 165–314."` | Not a bug — JPM and similar filings consolidate sections. Classify as `extracted` (literal body); surface in findings, do not transitively tag IBR |
+| No Item 16 → Item 15 sweeps to EOF (financial statements + glossary + auditor reports) | `Item 15 [extracted]` body = ~1MB on JPM-style filings | Expected for filings ending at Item 15. Surface in findings; the validator's `>2000-char gap` rule does not catch upper-bound run-on. Bounding requires a per-filing terminator pattern (e.g. `^Glossary of Terms`) which this skill does not impose |
 | Stray "Item 60" / footnote references | Spurious extra Items with random titles | `(\d{1,2})` constrained to `1[0-6]|[1-9]` |
 | `incorporated herein by reference` not classified | Items 10–14 tagged `extracted` with ~150-char proxy-statement body | `incorporat\w*(?:\s+\w+){0,5}\s+by\s+reference` |
 | Page-footer leak into short Items | `Item 4 [not_applicable]` body = `"Not applicable.\n\nApple Inc. \| 2023 Form 10-K \| 17"` | Strip footer pattern in cleaner OR trim post-extract |
 | Inline-XBRL `<ix:hidden>` text appearing in cleaned output | Garbage numeric tokens at the top of the cleaned text; offsets shifted | Cleaner strips `<ix:header>` / `<ix:hidden>` |
 | Body has no "Item N." anchors at all (older or non-standard filings, e.g. GE 2018) — the only `Item N.` text lives in a single end-of-doc TOC with page-range pointers (`Item 1.\nBusiness\n4-5, 12-35`); body uses page-numbered narrative without item-anchored headings | All items extracted with 1-17 char bodies (sliced between adjacent TOC entries), every item flagged "largest occurrence < 50 chars" | Out of reach of pure regex anchors. Either author a per-filing section-name → item-number map (e.g. `BUSINESS` → 1, `RISK FACTORS` → 1A) merged into anchors, or fall back to an LLM TOC pass that emits `(item, body_span)` pairs |
 
-## Validation (run after the script completes)
+## Validation
 
-For each filing's output, check and surface:
+The validation pass lives in `.claude/skills/10k-extraction/phase6-validation.md` (dispatched per Phase 6 above). The mechanical checks (status sanity, char_range monotonicity, gaps > 2000, page-footer leak, duplicate item records) live in `task3/scripts/extract/_validate.py` — the source of truth. Surface the subagent's findings verbatim under a `Findings` heading in the user reply; those are the loop closure points that tell us what to tune in the next per-filing script.
 
-- **Item count**: 15-30 is typical; outside that, flag.
-- **All four parts present**: at least one item under each of Part I/II/III/IV. Filings with no Part IV are rare but possible — note as a warning, not a hard fail.
-- **Status sanity**:
-  - Items whose `content_text` (trimmed) is `None.` / `None` / `N/A` but `status == "extracted"` → mis-tagged, flag.
-  - Items whose `item_title` contains `[Reserved]` but `status != "reserved"` → mis-tagged, flag.
-- **Page-footer leak**: items with `len(content_text) < 200` whose `content_text` contains `"Form 10-K"` or matches `r"\|\s*\d+\s*$"` (trailing page number) — likely picked up footer text, flag.
-- **Char_range gaps**: between consecutive items in the same part, if `next.char_range[0] - this.char_range[1] > 2000`, the script lost a body chunk — flag.
-- **Char_range monotonicity**: ranges must be non-decreasing across the array; otherwise the script got confused.
+## How to edit this skill (anti-benchmaxxing)
 
-Report flags as a bulleted list under a `Findings` heading in the response. These are the loop closure points — they tell us what to tune in the next per-filing script (or what general rule to lift back into authoring guidance).
+When a per-filing extraction surfaces a new trait, the temptation is to lift the fix into this skill on the spot. That overfits the general guidance to one document. Before editing SKILL.md, run these four checks:
+
+- **N≥2 before lifting.** A single filing's quirk stays in its per-filing script docstring (or a per-filing constant). Promote to SKILL.md only after the same trait shows up in a second unrelated filing. Per-filing scripts are the dumping ground for one-offs by design — that's why the skill mandates one script per filing.
+- **Structural over surface.** Before adding a keyword, phrase, or vendor-specific token to the skill, ask "what's the underlying structural property?" Token rules (`Refer to Item|Note|pages`) almost always have a structural equivalent (`body < 500 chars resolving elsewhere`). If one exists, use it — token rules benchmaxx by definition because the next filing will use different tokens for the same shape.
+- **Probes ask questions; they don't assert answers.** Diagnostic guidance should say "eyeball anything under 500 chars" rather than "grep for these three phrases." A probe that pre-decides what to find pre-decides what's interesting and trains the next author to miss the variant.
+- **Precise checks belong in `_validate.py`, not in skill prose.** If a finding can be expressed as a regex on output JSON, it's a validator rule (mechanical, surface, fine to be specific). Skill prose is for principles. Conflating the two grows SKILL.md without raising the floor.
 
 ## Out of scope
 
