@@ -39,6 +39,25 @@ BLOCK_TAGS = {
 
 
 def clean_html(raw: str, *, extra_strip_patterns: list[str] | None = None) -> str:
+    """Clean SEC 10-K HTML to plain text suitable for anchor finding.
+
+    Transform order:
+      1. Strip <ix:header> and <ix:hidden> blocks (inline XBRL).
+      2. Strip <script>, <style>, <head>, <noscript> blocks.
+      3. Replace block-level open/close tags with newlines.
+      4. Strip remaining tags.
+      5. Decode HTML entities.
+      6. Normalise NBSP (U+00A0) to space; drop ZWSP (U+200B).
+      7. Collapse runs of horizontal whitespace.
+      8. Trim trailing/leading whitespace per line.
+      9. Collapse 3+ consecutive newlines to 2.
+     10. Apply each pattern in `extra_strip_patterns` via re.sub(pat, "\\n", text).
+     11. Collapse 3+ newlines again, then strip().
+
+    `extra_strip_patterns` matches against already-normalised text (after step 9).
+    Use this for filing-specific recurring page-running footers, e.g.
+    r"\\nApple Inc\\. \\| 2023 Form 10-K \\| \\d+\\n".
+    """
     # Strip inline-XBRL hidden/header blocks first — their nonNumeric values
     # would otherwise leak as plain text to the top of the cleaned output.
     raw = re.sub(

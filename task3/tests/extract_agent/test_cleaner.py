@@ -8,6 +8,14 @@ def test_strips_script_and_style():
     assert "Hi" in clean_html(raw)
 
 
+def test_strips_head_and_noscript():
+    raw = "<html><head><title>X</title></head><noscript>NS</noscript><p>Body</p></html>"
+    out = clean_html(raw)
+    assert "X" not in out
+    assert "NS" not in out
+    assert "Body" in out
+
+
 def test_strips_inline_xbrl_hidden_and_header():
     raw = "<ix:hidden>SECRET</ix:hidden><p>Visible</p><ix:header>HDR</ix:header>"
     out = clean_html(raw)
