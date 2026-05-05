@@ -1,7 +1,7 @@
 """HTML cleaner for SEC 10-K filings.
 
 Ported from per-filing extractor scripts (see
-``task3/scripts/extract/320193-000032019323000106.py``). The per-filing
+``task3/scripts/extract_legacy/320193-000032019323000106.py``). The per-filing
 ``PAGE_FOOTER_RE`` knob is generalised here as ``extra_strip_patterns``: a list
 of regex strings each applied via ``re.sub(pat, "\\n", text)`` after the
 default cleanup but before the final newline-collapse pass.
