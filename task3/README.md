@@ -88,23 +88,23 @@ trillion-dollar megacaps).
 ### Reported numbers
 
 From the most recent `eval/famous_results.json` (10 filings,
-concurrency 5, per-case wall-clock cap):
+concurrency 5, per-case wall-clock cap). **Single-run numbers; the
+completion-rate column moves by ±1–2 filings between back-to-back
+runs at temperature 0** — see the variance note below.
 
-| Metric | Value |
+| Metric | Value (single run) |
 |---|---|
-| Completion rate | 7 / 10 reach `done` |
+| Completion rate | 7 / 10 reach `done` (varies ±1–2 per run) |
 | Failures | Berkshire 2008, Intel 2001, Citigroup 2008 — all `max_steps_exceeded`, matching the failure modes called out below |
 | Cost / filing | median **$0.0295**, mean $0.0429, max $0.1023 (DeepSeek `usage`-based) |
 | Total cost across 10 filings | $0.43 |
 | Wall-clock latency | median **41.9 s**, mean 53.1 s, max 121.1 s |
 | Per-filing cost ceiling | $0.50 (`COST_CEILING_USD`) |
 
-These are single-run numbers. DeepSeek `deepseek-chat` is not
-deterministic even at temperature 0, so the same filing can land in
-12–17 steps on one run and trip `MAX_STEPS=30` on the next; the
-completion-rate column moves by ±1–2 filings between back-to-back
-runs without any code change. Treat the table as a smoke signal, not
-a benchmark — Berkshire 2008 / Intel 2001 / Citigroup 2008 are the
+DeepSeek `deepseek-chat` is not deterministic even at temperature 0,
+so the same filing can land in 12–17 steps on one run and trip
+`MAX_STEPS=30` on the next. Treat the table as a smoke signal, not a
+benchmark — Berkshire 2008 / Intel 2001 / Citigroup 2008 are the
 structurally hard cases (see Failure Analysis), the rest are
 LLM-variance noise.
 
@@ -447,7 +447,7 @@ Outputs: `data/survey/report.md`, `data/survey/report.csv`.
    into `eval/legacy_overrides.json` by hand with a reason — Claude
    did not pick its own overrides.
 3. **Failure-mode triage drove the system prompt, not abstract
-   design.** The status taxonomy section in `prompts/system_big.md`
+   design.** The status taxonomy section in `src/extract_agent/prompts/system_big.md`
    was rewritten three times in response to *specific*
    misclassifications: NVIDIA item 9C (boundary phrasing → override),
    Microsoft FY2020 item 16 (likewise), Berkshire 2002's
@@ -480,7 +480,7 @@ Outputs: `data/survey/report.md`, `data/survey/report.csv`.
 A single-process Python package that takes one 10-K HTML filing in and
 emits the per-item JSON list out. The agent runs a ReAct-style loop over
 a fixed tool catalogue (`tools/`); the orchestrator system prompt
-(`prompts/system_big.md`) pins a canonical 7-call happy path and
+(`src/extract_agent/prompts/system_big.md`) pins a canonical 7-call happy path and
 narrowly scoped escape hatches.
 
 - **Brainstorming prompt:** [`prompts/brainstorming.md`](./prompts/brainstorming.md)
