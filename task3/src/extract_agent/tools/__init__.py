@@ -1,4 +1,5 @@
 from . import (
+    classify_statuses,
     clean_and_load,
     done,
     find_anchors,
@@ -21,6 +22,7 @@ REGISTRY = {
     "regex_search": regex_search,
     "inspect_record": inspect_record,
     "update_record": update_record,
+    "classify_statuses": classify_statuses,
     "done": done,
 }
 
