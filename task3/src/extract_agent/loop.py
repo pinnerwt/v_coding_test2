@@ -11,8 +11,8 @@ from .state import SessionState
 
 # DeepSeek prices per million tokens (cache-miss).
 _PRICES = {
-    "deepseek-v4-pro": (0.435, 0.87),
-    "deepseek-v4-flash": (0.14, 0.28),
+    "deepseek-chat": (0.27, 1.10),
+    "deepseek-reasoner": (0.55, 2.19),
 }
 
 

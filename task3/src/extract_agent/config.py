@@ -17,8 +17,8 @@ class Config:
     def from_env(cls) -> Config:
         return cls(
             base_url=os.getenv("AGENT_MODEL_BASE_URL", "https://api.deepseek.com"),
-            big_model=os.getenv("AGENT_MODEL_BIG", "deepseek-v4-pro"),
-            small_model=os.getenv("AGENT_MODEL_SMALL", "deepseek-v4-flash"),
+            big_model=os.getenv("AGENT_MODEL_BIG", "deepseek-chat"),
+            small_model=os.getenv("AGENT_MODEL_SMALL", "deepseek-chat"),
             api_key=os.getenv("DEEPSEEK_API_KEY"),
             max_steps=int(os.getenv("MAX_STEPS", "30")),
             cost_ceiling_usd=float(os.getenv("COST_CEILING_USD", "0.50")),

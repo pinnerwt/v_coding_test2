@@ -13,8 +13,8 @@ def test_defaults_when_env_unset(monkeypatch):
         monkeypatch.delenv(k, raising=False)
     cfg = Config.from_env()
     assert cfg.base_url == "https://api.deepseek.com"
-    assert cfg.big_model == "deepseek-v4-pro"
-    assert cfg.small_model == "deepseek-v4-flash"
+    assert cfg.big_model == "deepseek-chat"
+    assert cfg.small_model == "deepseek-chat"
     assert cfg.api_key is None
     assert cfg.max_steps == 30
     assert cfg.cost_ceiling_usd == 0.50
