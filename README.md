@@ -1,8 +1,8 @@
 # vici — AI Coding Test
 
 ### Evaluation, Failure Analysis, Key Design Tradeoffs
-- [task2](task2/README.md)
-- [task3](task3/README.md)
+- [task2](task2/README.md) — browser automation agent
+- [task3](task3/README.md) — SEC 10-K item-level extraction
 
 [![Python](https://img.shields.io/badge/python-3.11-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![uv](https://img.shields.io/badge/uv-0.9.3-261230?logo=python&logoColor=white)](https://github.com/astral-sh/uv)
@@ -19,9 +19,9 @@ This repo is a second-pass attempt at the three tasks defined in [`AI-Coding-Tes
 |----|------------------------------------------------|----------------|------------------------|
 | 1  | GitHub CI/CD as Claude Skills                  | not started    | —                      |
 | 2  | Generalized Browser Automation Agent           | in progress    | [`task2/`](task2/)     |
-| 3  | SEC 10-K Item-level Structured Extraction      | not started    | —                      |
+| 3  | SEC 10-K Item-level Structured Extraction      | in progress    | [`task3/`](task3/)     |
 
-Zeabur URL lands in `task2/README.md` once deployed.
+Zeabur URLs: task 2 lands in `task2/README.md` once deployed; task 3 is deployed at `api.pinner.top` (shared host with task 2 — see [`task3/README.md`](task3/README.md#zeabur)). Task 3 has no CI/CD wired up; the `task2-ci.yml` workflow is task-2-only.
 
 ## Repository layout
 
@@ -33,7 +33,8 @@ Zeabur URL lands in `task2/README.md` once deployed.
 ├── observations.md            # running notes from /bench-failure-triage
 ├── docs/                      # design docs and plans
 ├── prompts/                   # key prompts used to drive development
-└── task2/                     # browser automation agent (uv project)
+├── task2/                     # browser automation agent (uv project)
+└── task3/                     # SEC 10-K item-level extraction (uv project)
 ```
 
 ## Quick start (task 2)
@@ -51,6 +52,26 @@ set -a && . ./.env && set +a && \
 
 See [`task2/README.md`](task2/README.md) for env vars, Docker, Zeabur, and architecture notes.
 
+## Quick start (task 3)
+
+```bash
+cd task3
+uv sync
+uv run pytest -v                       # unit + integration + eval helpers
+uv run ruff check .
+uv run python -m extract_agent --help
+```
+
+Single filing by CIK + accession (resolved via `data/index.json`):
+
+```bash
+uv run python -m extract_agent \
+  --cik 320193 --accession 0000320193-23-000106 \
+  --out data/extracted/320193-000032019323000106.json
+```
+
+See [`task3/README.md`](task3/README.md) for the full eval surface (regression / famous-hard / Cat E 1995 SGML), failure analysis, design tradeoffs, the HTTP API, and Docker / Zeabur notes.
+
 ## Development workflow
 
 - **TDD is non-negotiable.** Red → green → refactor. Bug fixes start with a regression test. Eval sets count as tests for tasks 2 and 3. See [`CLAUDE.md`](CLAUDE.md).
@@ -62,6 +83,8 @@ See [`task2/README.md`](task2/README.md) for env vars, Docker, Zeabur, and archi
 ## CI/CD
 
 [`task2-ci.yml`](.github/workflows/task2-ci.yml) runs on pushes to `main` and PRs targeting `main` that touch `task2/**` or the workflow itself. It installs `uv`, syncs deps with `--frozen`, installs Chromium for Playwright, then runs `ruff check`, `ruff format --check`, and `pytest --cov=agent --cov-report=xml:../artifacts/coverage.xml`. The XML report is committed at [`artifacts/coverage.xml`](artifacts/coverage.xml) (also uploaded as the `task2-coverage` workflow artifact). Concurrency is keyed by ref so superseded runs cancel themselves.
+
+Task 3 has no CI workflow — `uv run pytest` and `uv run ruff check .` from `task3/` are the local gates.
 
 ## Dependabot
 
@@ -90,12 +113,15 @@ CI overwrites the same file on every PR and also uploads it as the `task2-covera
 The `prompts/` directory is the AI-collaboration record reviewers read:
 
 - [`prompts/task2.md`](prompts/task2.md) — the task 2 seed prompt and the resulting plan.
+- [`prompts/task3.md`](prompts/task3.md) — the task 3 seed prompt and the resulting plan.
+- [`task3/prompts/brainstorming.md`](task3/prompts/brainstorming.md) — task 3 brainstorming prompt.
 
 ## Deployment
 
 Each task is deployed as a public service on [Zeabur](https://zeabur.com/) per the brief.
 
 - task 2: see [`task2/README.md`](task2/README.md#zeabur). Build config in `task2/Dockerfile`. Persistent volume must be mounted at `/app/data` (URL notes + traces). Deploy URL: _to be filled in._
+- task 3: see [`task3/README.md`](task3/README.md#zeabur). Build config in `task3/Dockerfile`. Container exposes `sec_toolbox.api:app` on port 8080 (filing fetch + extraction). Deploy URL: `api.pinner.top` (shared host with task 2).
 
 ## Contributing / collaborating
 
