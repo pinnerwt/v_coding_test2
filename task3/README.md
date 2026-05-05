@@ -87,6 +87,37 @@ trillion-dollar megacaps).
 
 ### Reported numbers
 
+#### Headline (full eval surface)
+
+`eval/headline.py` rolls up the three eval sources into one table
+(filings reaching `done`, items emitted, median cost / latency on
+done-only filings). Output of `uv run python eval/headline.py` against
+the latest committed result snapshots:
+
+| Source | Done / total | Items | Median $ (done) | Median s (done) |
+|---|---|---|---|---|
+| Regression (modern, has legacy baseline) | **8 / 8** | 181 | — | — |
+| Famous-hard (2007–08 crisis, pre-SOX) | **7 / 10** | 136 | $0.0233 | 39.2 |
+| Cat E (1995 plain-text SGML) | **2 / 3** | 28 | $0.0485 | 44.1 |
+| **TOTAL** | **17 / 21 (81.0%)** | **345** | — | — |
+
+Item-level correctness is only measurable on the regression subset (the
+8 modern filings with hand-curated legacy baselines under
+`scripts/extract_legacy/`); on that subset the median strict
+status-match across three back-to-back runs is **74.0%** (87.6% with
+`legacy_overrides.json`), detailed in the next subsection. The other 13
+filings have no public ground truth, so the headline reduces to a
+filing-level pass rate plus the per-source cost/latency above. The
+three open structural failures (Berkshire 2008, Intel 2001,
+Citigroup 2008) and GE 1995 are the same cases called out in Failure
+Analysis — they account for the entire 4-filing gap between 17 and 21.
+
+Regression-set median costs / latency are not surfaced here because the
+artifacts under `data/extracted/` are frozen outputs, not live runs;
+re-run `eval/regression.py` to measure them fresh.
+
+#### Famous-hard set (single-run snapshot)
+
 From the most recent `eval/famous_results.json` (10 filings,
 concurrency 5, per-case wall-clock cap). **Single-run numbers; the
 completion-rate column moves by ±1–2 filings between back-to-back
