@@ -5,6 +5,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 COPY src ./src
 COPY prompts ./prompts
+COPY scripts ./scripts
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH=/app/src
 EXPOSE 8080

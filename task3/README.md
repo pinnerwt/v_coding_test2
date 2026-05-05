@@ -103,6 +103,15 @@ concurrency 5, per-case wall-clock cap):
 | Wall-clock latency | median **41.9 s**, mean 53.1 s, max 121.1 s |
 | Per-filing cost ceiling | $0.50 (`COST_CEILING_USD`) |
 
+These are single-run numbers. DeepSeek `deepseek-chat` is not
+deterministic even at temperature 0, so the same filing can land in
+12–17 steps on one run and trip `MAX_STEPS=30` on the next; the
+completion-rate column moves by ±1–2 filings between back-to-back
+runs without any code change. Treat the table as a smoke signal, not
+a benchmark — Berkshire 2008 / Intel 2001 / Citigroup 2008 are the
+structurally hard cases (see Failure Analysis), the rest are
+LLM-variance noise.
+
 For the 8-filing regression set (`eval/regression.py` against
 `scripts/extract_legacy/`), the residual per-item drift on a green run
 is dominated by the four entries in `eval/legacy_overrides.json` —
@@ -134,6 +143,21 @@ Common failure patterns observed:
   - Detected by anchor density clustered in a small TOC region. The agent
     writes a stub artifact, surfaces the finding in `done(message=...)`,
     and falls back to the legacy script for those CIKs.
+
+- **Tail cross-reference index**
+  - Variant of the index-page case: real bodies live in the front, but
+    the document tail (offsets > 90% of the doc) repeats every item
+    heading packed in a 20-char window (`ITEM 1.\nITEM 2.\nITEM 3.\n...`).
+    `find_anchors` previously surfaced these via last-write-wins on its
+    `by_item` dict, hiding the real body anchor from the agent.
+  - Mitigated by computing the longest-body anchor per item inside
+    `find_anchors` (same logic the slicer uses) and exposing a new
+    `duplicates: {item: count}` field so the agent sees ambiguity up
+    front. Still pathological cases: Intel 2001, Citigroup 2008 — the
+    body uses bare-numeric headings only in the cross-ref index and
+    section names everywhere else, so no anchor regex matches the
+    actual body. Treated as out-of-scope for the agent; legacy script
+    required.
 
 - **Looping / step-budget exhaustion**
   - LLM keeps re-validating after `validate_records` returns soft
@@ -285,10 +309,15 @@ uv run python eval/regression.py --cik 320193
 
 ```bash
 uv run python eval/run_famous.py
+uv run python eval/run_famous.py --concurrency 4 --per-case-timeout 240
 ```
 
 Writes `eval/famous_results.json`. No legacy ground truth; this is a
-wider-coverage signal.
+wider-coverage signal. `--per-case-timeout <seconds>` (default 240)
+wraps each case in `asyncio.wait_for` so a single stuck filing cannot
+hold the shared event loop hostage when running with `--concurrency >
+1`; exceeded cases land in the summary as `status=wall_timeout`
+instead of pinning a CPU core indefinitely.
 
 ### Survey
 
@@ -334,7 +363,10 @@ both OpenAI-compatible. The agent loop:
 
 1. `clean_and_load` — strip HTML, normalize text, return a `text_id`.
 2. `find_anchors` — regex sweep for `Item N[A-Z]?` headings; named
-   groups required.
+   groups required. Returns `by_item` (longest-body anchor per item,
+   matching the slicer) and `duplicates: {item: count}` so the agent
+   can see when multiple anchors survived dedupe and reason about
+   tail cross-reference indexes.
 3. `slice_items` — cut between consecutive anchors; dedup TOC-region
    anchors; pick longest body per `(part, item_number)`.
 4. `classify_statuses` — small-model pass over each slice → one of
