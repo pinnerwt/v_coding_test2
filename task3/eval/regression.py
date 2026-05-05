@@ -7,14 +7,22 @@ import asyncio
 import json
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 REPO_TASK3 = Path(__file__).resolve().parents[1]
 DATA_ROOT = REPO_TASK3 / "data"
 EXTRACTED_DIR = DATA_ROOT / "extracted"
 INDEX_PATH = DATA_ROOT / "index.json"
+OVERRIDES_PATH = REPO_TASK3 / "eval" / "legacy_overrides.json"
 
 SOFT_LEN_THRESHOLD = 0.05
+
+
+def _load_overrides() -> dict[str, dict]:
+    if not OVERRIDES_PATH.exists():
+        return {}
+    return json.loads(OVERRIDES_PATH.read_text()).get("filings", {})
 
 
 def _normalize_accession(s: str) -> str:
@@ -67,26 +75,58 @@ def _index_by_item(records: list[dict]) -> dict[str, dict]:
     return {str(r.get("item_number")): r for r in records if r.get("item_number")}
 
 
-def _diff_filing(legacy: list[dict], current: list[dict]) -> tuple[list[str], list[str]]:
-    """Return (hard_failures, soft_failures) as human-readable strings."""
+def _diff_filing(
+    legacy: list[dict],
+    current: list[dict],
+    override: dict | None = None,
+) -> tuple[list[str], list[str], list[str]]:
+    """Return (hard_failures, soft_failures, expected_drift) as strings.
+
+    `override` is a per-filing entry from legacy_overrides.json. Diffs that
+    match a tolerated kind are demoted to `expected` instead of `hard`.
+    """
     hard: list[str] = []
     soft: list[str] = []
+    expected: list[str] = []
+
+    items_override = (override or {}).get("items") or {}
+
+    def _tol(item_no: str, kind: str) -> str | None:
+        entry = items_override.get(item_no) or {}
+        if kind in (entry.get("tolerate") or []):
+            return entry.get("reason", "")
+        return None
 
     legacy_by = _index_by_item(legacy)
     current_by = _index_by_item(current)
 
     if len(current) != len(legacy):
-        hard.append(f"item count drift: legacy={len(legacy)} current={len(current)}")
+        msg = f"item count drift: legacy={len(legacy)} current={len(current)}"
+        # If any tolerated item allows count_drift, treat the count diff as expected.
+        if any("count_drift" in (v.get("tolerate") or []) for v in items_override.values()):
+            expected.append(f"{msg} [tolerated by item-level count_drift override]")
+        else:
+            hard.append(msg)
 
     for item_no, lrec in legacy_by.items():
         crec = current_by.get(item_no)
         if crec is None:
-            hard.append(f"missing item {item_no}")
+            msg = f"missing item {item_no}"
+            reason = _tol(item_no, "missing")
+            if reason is not None:
+                expected.append(f"{msg} [tolerated: {reason}]")
+            else:
+                hard.append(msg)
             continue
         l_status = lrec.get("status")
         c_status = crec.get("status")
         if l_status != c_status:
-            hard.append(f"item {item_no} status flip: legacy={l_status} current={c_status}")
+            msg = f"item {item_no} status flip: legacy={l_status} current={c_status}"
+            reason = _tol(item_no, "status_flip")
+            if reason is not None:
+                expected.append(f"{msg} [tolerated: {reason}]")
+            else:
+                hard.append(msg)
             continue
         l_body = lrec.get("content_text") or ""
         c_body = crec.get("content_text") or ""
@@ -106,9 +146,14 @@ def _diff_filing(legacy: list[dict], current: list[dict]) -> tuple[list[str], li
 
     for item_no in current_by:
         if item_no not in legacy_by:
-            hard.append(f"unexpected item {item_no} not in legacy")
+            msg = f"unexpected item {item_no} not in legacy"
+            reason = _tol(item_no, "extra")
+            if reason is not None:
+                expected.append(f"{msg} [tolerated: {reason}]")
+            else:
+                hard.append(msg)
 
-    return hard, soft
+    return hard, soft, expected
 
 
 async def _run_agent(html_path: Path, out_path: Path) -> dict:
@@ -132,28 +177,53 @@ async def _run_agent(html_path: Path, out_path: Path) -> dict:
         await small.aclose()
 
 
-def _evaluate_one(cik: str, accession: str, legacy_path: Path) -> tuple[str, list[str], list[str]]:
-    """Returns (verdict, hard, soft) where verdict is 'ok' / 'soft' / 'hard'."""
+async def _evaluate_one(
+    cik: str,
+    accession: str,
+    legacy_path: Path,
+    override: dict | None = None,
+) -> tuple[str, list[str], list[str], list[str], float]:
+    """Returns (verdict, hard, soft, expected, elapsed_seconds).
+
+    Verdicts: 'ok' (no issues), 'expected' (only tolerated drift),
+    'soft' (only soft warnings), 'hard' (real failure).
+    """
+    start = time.perf_counter()
+
+    if override and override.get("out_of_scope"):
+        return (
+            "expected",
+            [],
+            [],
+            [f"out-of-scope: {override['out_of_scope']}"],
+            time.perf_counter() - start,
+        )
+
     html_path = _resolve_html_path(cik, accession)
     legacy = json.loads(legacy_path.read_text())
 
     with tempfile.TemporaryDirectory() as td:
         out_path = Path(td) / f"{cik}-{accession}.json"
-        result = asyncio.run(_run_agent(html_path, out_path))
+        result = await _run_agent(html_path, out_path)
         if result.get("status") != "done":
             return (
                 "hard",
                 [f"agent did not finish: status={result.get('status')}"],
                 [],
+                [],
+                time.perf_counter() - start,
             )
         current = json.loads(out_path.read_text())
 
-    hard, soft = _diff_filing(legacy, current)
+    hard, soft, expected = _diff_filing(legacy, current, override)
+    elapsed = time.perf_counter() - start
     if hard:
-        return "hard", hard, soft
+        return "hard", hard, soft, expected, elapsed
     if soft:
-        return "soft", hard, soft
-    return "ok", hard, soft
+        return "soft", hard, soft, expected, elapsed
+    if expected:
+        return "expected", hard, soft, expected, elapsed
+    return "ok", hard, soft, expected, elapsed
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -168,6 +238,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--cik",
         help="Restrict to one filing by CIK (matched against legacy filenames).",
     )
+    p.add_argument(
+        "--parallel",
+        type=int,
+        default=4,
+        help="Max concurrent filings (default 4). Set 1 for sequential.",
+    )
     return p
 
 
@@ -180,40 +256,69 @@ def main(argv: list[str] | None = None) -> int:
         print("no legacy filings matched", file=sys.stderr)
         return 1
 
-    counts = {"ok": 0, "soft": 0, "hard": 0}
-    rows: list[tuple[str, str, str]] = []  # (label, verdict, summary)
+    overrides = _load_overrides()
+    counts = {"ok": 0, "expected": 0, "soft": 0, "hard": 0}
+    rows: list[tuple[str, str, str, float]] = []  # (label, verdict, summary, elapsed)
 
-    for cik, accession, legacy_path in filings:
+    sem = asyncio.Semaphore(max(1, args.parallel))
+
+    async def _one(cik: str, accession: str, legacy_path: Path):
+        async with sem:
+            try:
+                return await _evaluate_one(
+                    cik, accession, legacy_path, overrides.get(f"{cik}-{accession}")
+                )
+            except Exception as exc:  # noqa: BLE001
+                return ("hard", [f"exception: {exc}"], [], [], 0.0)
+
+    async def _run_all():
+        return await asyncio.gather(
+            *[_one(c, a, p) for c, a, p in filings]
+        )
+
+    results = asyncio.run(_run_all())
+
+    for (cik, accession, _legacy_path), (verdict, hard, soft, expected, elapsed) in zip(
+        filings, results, strict=True
+    ):
         label = f"{cik}-{accession}"
-        try:
-            verdict, hard, soft = _evaluate_one(cik, accession, legacy_path)
-        except Exception as exc:  # noqa: BLE001
-            counts["hard"] += 1
-            print(f"[{label}] hard: exception: {exc}", file=sys.stderr)
-            rows.append((label, "hard", f"exception: {exc}"))
-            continue
-
         counts[verdict] += 1
+        for msg in expected:
+            print(f"[{label}] expected: {msg}", file=sys.stderr)
+        ts = f"{elapsed:6.1f}s"
         if verdict == "ok":
-            print(f"[{label}] ok")
-            rows.append((label, "ok", ""))
+            print(f"[{label}] ok ({ts})")
+            rows.append((label, "ok", "", elapsed))
+        elif verdict == "expected":
+            print(f"[{label}] expected ({ts}, tolerated drift only)")
+            rows.append((label, "expected", "; ".join(expected), elapsed))
         elif verdict == "soft":
             for msg in soft:
                 print(f"[{label}] soft: {msg}", file=sys.stderr)
-            rows.append((label, "soft", "; ".join(soft)))
+            print(f"[{label}] soft ({ts})")
+            rows.append((label, "soft", "; ".join(soft), elapsed))
         else:
             for msg in hard:
                 print(f"[{label}] hard: {msg}", file=sys.stderr)
             for msg in soft:
                 print(f"[{label}] soft: {msg}", file=sys.stderr)
-            rows.append((label, "hard", "; ".join(hard)))
+            print(f"[{label}] hard ({ts})")
+            rows.append((label, "hard", "; ".join(hard), elapsed))
 
     print()
     print("=== summary ===")
-    print(f"filings: {len(filings)}")
-    print(f"ok:   {counts['ok']}")
-    print(f"soft: {counts['soft']}")
-    print(f"hard: {counts['hard']}")
+    print(f"filings:  {len(filings)}")
+    print(f"ok:       {counts['ok']}")
+    print(f"expected: {counts['expected']}")
+    print(f"soft:     {counts['soft']}")
+    print(f"hard:     {counts['hard']}")
+    if rows:
+        per_case = [r[3] for r in rows]
+        print(
+            f"per-case: min={min(per_case):.1f}s "
+            f"median={sorted(per_case)[len(per_case)//2]:.1f}s "
+            f"max={max(per_case):.1f}s"
+        )
 
     return 0 if counts["hard"] == 0 else 1
 
