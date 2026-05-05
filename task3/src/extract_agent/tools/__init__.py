@@ -3,6 +3,7 @@ from . import (
     done,
     find_anchors,
     read_chars,
+    regex_search,
     slice_items,
     validate_records,
     write_output,
@@ -15,6 +16,7 @@ REGISTRY = {
     "validate_records": validate_records,
     "write_output": write_output,
     "read_chars": read_chars,
+    "regex_search": regex_search,
     "done": done,
 }
 
