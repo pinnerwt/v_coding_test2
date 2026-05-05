@@ -13,3 +13,6 @@ Let's work on a refactor of what python codes you have used first. You tried to 
 
 Can you write a verification file that will help you verify the output too for next run? The idea is to avoid direct shell script in next runs
 The TOC stub should not appear in the output JSON. It is just something that helps you identify the structure/location of different Items.
+
+Let's discuss this: Is it possible for an item to be multiple statuses? I mean, it could have multiple extracted, but also incorportae for ref in some paragraphs
+I think we should split it into several items. Per @AI-coding-EN.md , it only fixes the output schema. The only way to stick with it is to have multiple elements for the same item. This also tells us that we might need to read every text in detail to do the correct cut. Go through LLM first. We have no idea how documents in 2008 look the same.
