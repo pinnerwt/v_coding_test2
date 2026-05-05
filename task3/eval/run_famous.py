@@ -16,7 +16,7 @@ from pathlib import Path
 REPO_TASK3 = Path(__file__).resolve().parents[1]
 DATA_ROOT = REPO_TASK3 / "data"
 ARCHIVE_ROOT = DATA_ROOT / "raw" / "archive"
-LIST_PATH = REPO_TASK3 / "eval" / "famous_10ks.json"
+DEFAULT_LIST_PATH = REPO_TASK3 / "eval" / "famous_10ks.json"
 
 
 def _accession_no_dashes(s: str) -> str:
@@ -107,9 +107,25 @@ async def _main(argv: list[str] | None = None) -> int:
         default=240.0,
         help="Wall-clock cap per filing in seconds (default 240).",
     )
+    p.add_argument(
+        "--list",
+        dest="list_path",
+        default=str(DEFAULT_LIST_PATH),
+        help="Path to a JSON list of {label, cik, accession, filename} entries.",
+    )
+    p.add_argument(
+        "--out",
+        dest="out_path",
+        default=None,
+        help="Where to write the results JSON. Defaults to <list-stem>_results.json.",
+    )
     args = p.parse_args(argv)
 
-    entries = json.loads(LIST_PATH.read_text())
+    list_path = Path(args.list_path)
+    out_path = Path(args.out_path) if args.out_path else list_path.with_name(
+        list_path.stem + "_results.json"
+    )
+    entries = json.loads(list_path.read_text())
     if args.filter:
         entries = [e for e in entries if args.filter.lower() in e["label"].lower()]
 
@@ -153,7 +169,8 @@ async def _main(argv: list[str] | None = None) -> int:
     for k, v in sorted(by_status.items()):
         print(f"  {k}: {v}")
 
-    Path(REPO_TASK3 / "eval" / "famous_results.json").write_text(json.dumps(results, indent=2))
+    out_path.write_text(json.dumps(results, indent=2))
+    print(f"\nwrote {out_path}")
     return 0
 
 

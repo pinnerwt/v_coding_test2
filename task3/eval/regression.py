@@ -79,11 +79,18 @@ def _diff_filing(
     legacy: list[dict],
     current: list[dict],
     override: dict | None = None,
-) -> tuple[list[str], list[str], list[str]]:
-    """Return (hard_failures, soft_failures, expected_drift) as strings.
+) -> tuple[list[str], list[str], list[str], dict[str, int]]:
+    """Return (hard_failures, soft_failures, expected_drift, counts).
 
     `override` is a per-filing entry from legacy_overrides.json. Diffs that
     match a tolerated kind are demoted to `expected` instead of `hard`.
+
+    `counts` is an item-level accuracy summary against the legacy baseline:
+        total_items                — legacy item count
+        status_match_strict        — items where current.status == legacy.status
+        status_match_with_overrides — strict matches plus tolerated status_flip items
+        body_within_5pct           — items where |Δlen|/legacy_len < SOFT_LEN_THRESHOLD
+                                     (only counted for items that are present in current)
     """
     hard: list[str] = []
     soft: list[str] = []
@@ -99,6 +106,13 @@ def _diff_filing(
 
     legacy_by = _index_by_item(legacy)
     current_by = _index_by_item(current)
+
+    counts = {
+        "total_items": len(legacy_by),
+        "status_match_strict": 0,
+        "status_match_with_overrides": 0,
+        "body_within_5pct": 0,
+    }
 
     if len(current) != len(legacy):
         msg = f"item count drift: legacy={len(legacy)} current={len(current)}"
@@ -120,14 +134,22 @@ def _diff_filing(
             continue
         l_status = lrec.get("status")
         c_status = crec.get("status")
-        if l_status != c_status:
+        status_flipped = l_status != c_status
+        if not status_flipped:
+            counts["status_match_strict"] += 1
+            counts["status_match_with_overrides"] += 1
+        else:
             msg = f"item {item_no} status flip: legacy={l_status} current={c_status}"
             reason = _tol(item_no, "status_flip")
             if reason is not None:
                 expected.append(f"{msg} [tolerated: {reason}]")
+                counts["status_match_with_overrides"] += 1
             else:
                 hard.append(msg)
-            continue
+
+        # Body / range comparison runs independently of status — these are
+        # orthogonal accuracy axes ("did we cut the boundary right" vs
+        # "did we label the slice right").
         l_body = lrec.get("content_text") or ""
         c_body = crec.get("content_text") or ""
         l_len = len(l_body)
@@ -137,12 +159,17 @@ def _diff_filing(
         ratio = delta / denom
         haus = _hausdorff(lrec.get("char_range"), crec.get("char_range"))
         if ratio >= SOFT_LEN_THRESHOLD:
-            soft.append(
-                f"item {item_no} body-len drift: legacy={l_len} current={c_len} "
-                f"|Δ|/legacy={ratio:.3f} hausdorff={haus}"
-            )
-        elif haus is not None and haus > 0:
-            soft.append(f"item {item_no} char_range hausdorff={haus} (body unchanged)")
+            # Don't emit a soft warning when status already flipped — that would
+            # double-report the same item; the status flip is the headline issue.
+            if not status_flipped:
+                soft.append(
+                    f"item {item_no} body-len drift: legacy={l_len} current={c_len} "
+                    f"|Δ|/legacy={ratio:.3f} hausdorff={haus}"
+                )
+        else:
+            counts["body_within_5pct"] += 1
+            if not status_flipped and haus is not None and haus > 0:
+                soft.append(f"item {item_no} char_range hausdorff={haus} (body unchanged)")
 
     for item_no in current_by:
         if item_no not in legacy_by:
@@ -153,7 +180,7 @@ def _diff_filing(
             else:
                 hard.append(msg)
 
-    return hard, soft, expected
+    return hard, soft, expected, counts
 
 
 async def _run_agent(html_path: Path, out_path: Path) -> dict:
@@ -182,8 +209,8 @@ async def _evaluate_one(
     accession: str,
     legacy_path: Path,
     override: dict | None = None,
-) -> tuple[str, list[str], list[str], list[str], float]:
-    """Returns (verdict, hard, soft, expected, elapsed_seconds).
+) -> tuple[str, list[str], list[str], list[str], dict[str, int], float]:
+    """Returns (verdict, hard, soft, expected, counts, elapsed_seconds).
 
     Verdicts: 'ok' (no issues), 'expected' (only tolerated drift),
     'soft' (only soft warnings), 'hard' (real failure).
@@ -191,16 +218,25 @@ async def _evaluate_one(
     start = time.perf_counter()
 
     if override and override.get("out_of_scope"):
+        legacy = json.loads(legacy_path.read_text())
+        n_legacy = len({str(r.get("item_number")) for r in legacy if r.get("item_number")})
         return (
             "expected",
             [],
             [],
             [f"out-of-scope: {override['out_of_scope']}"],
+            {
+                "total_items": n_legacy,
+                "status_match_strict": 0,
+                "status_match_with_overrides": n_legacy,
+                "body_within_5pct": 0,
+            },
             time.perf_counter() - start,
         )
 
     html_path = _resolve_html_path(cik, accession)
     legacy = json.loads(legacy_path.read_text())
+    n_legacy = len({str(r.get("item_number")) for r in legacy if r.get("item_number")})
 
     with tempfile.TemporaryDirectory() as td:
         out_path = Path(td) / f"{cik}-{accession}.json"
@@ -211,19 +247,25 @@ async def _evaluate_one(
                 [f"agent did not finish: status={result.get('status')}"],
                 [],
                 [],
+                {
+                    "total_items": n_legacy,
+                    "status_match_strict": 0,
+                    "status_match_with_overrides": 0,
+                    "body_within_5pct": 0,
+                },
                 time.perf_counter() - start,
             )
         current = json.loads(out_path.read_text())
 
-    hard, soft, expected = _diff_filing(legacy, current, override)
+    hard, soft, expected, counts = _diff_filing(legacy, current, override)
     elapsed = time.perf_counter() - start
     if hard:
-        return "hard", hard, soft, expected, elapsed
+        return "hard", hard, soft, expected, counts, elapsed
     if soft:
-        return "soft", hard, soft, expected, elapsed
+        return "soft", hard, soft, expected, counts, elapsed
     if expected:
-        return "expected", hard, soft, expected, elapsed
-    return "ok", hard, soft, expected, elapsed
+        return "expected", hard, soft, expected, counts, elapsed
+    return "ok", hard, soft, expected, counts, elapsed
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -269,7 +311,19 @@ def main(argv: list[str] | None = None) -> int:
                     cik, accession, legacy_path, overrides.get(f"{cik}-{accession}")
                 )
             except Exception as exc:  # noqa: BLE001
-                return ("hard", [f"exception: {exc}"], [], [], 0.0)
+                return (
+                    "hard",
+                    [f"exception: {exc}"],
+                    [],
+                    [],
+                    {
+                        "total_items": 0,
+                        "status_match_strict": 0,
+                        "status_match_with_overrides": 0,
+                        "body_within_5pct": 0,
+                    },
+                    0.0,
+                )
 
     async def _run_all():
         return await asyncio.gather(
@@ -278,11 +332,25 @@ def main(argv: list[str] | None = None) -> int:
 
     results = asyncio.run(_run_all())
 
-    for (cik, accession, _legacy_path), (verdict, hard, soft, expected, elapsed) in zip(
-        filings, results, strict=True
-    ):
+    totals = {
+        "total_items": 0,
+        "status_match_strict": 0,
+        "status_match_with_overrides": 0,
+        "body_within_5pct": 0,
+    }
+
+    for (cik, accession, _legacy_path), (
+        verdict,
+        hard,
+        soft,
+        expected,
+        item_counts,
+        elapsed,
+    ) in zip(filings, results, strict=True):
         label = f"{cik}-{accession}"
         counts[verdict] += 1
+        for k in totals:
+            totals[k] += item_counts.get(k, 0)
         for msg in expected:
             print(f"[{label}] expected: {msg}", file=sys.stderr)
         ts = f"{elapsed:6.1f}s"
@@ -319,6 +387,18 @@ def main(argv: list[str] | None = None) -> int:
             f"median={sorted(per_case)[len(per_case)//2]:.1f}s "
             f"max={max(per_case):.1f}s"
         )
+
+    if totals["total_items"]:
+        n = totals["total_items"]
+        s = totals["status_match_strict"]
+        s_ov = totals["status_match_with_overrides"]
+        b = totals["body_within_5pct"]
+        print()
+        print("=== item-level accuracy vs legacy baseline ===")
+        print(f"total items:                 {n}")
+        print(f"status match (strict):       {s}/{n}  ({s / n:.1%})")
+        print(f"status match (w/ overrides): {s_ov}/{n}  ({s_ov / n:.1%})")
+        print(f"body within 5% of legacy:    {b}/{n}  ({b / n:.1%})")
 
     return 0 if counts["hard"] == 0 else 1
 

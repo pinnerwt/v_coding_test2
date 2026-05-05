@@ -75,7 +75,14 @@ async def main(argv: list[str] | None = None) -> int:
                             raw_args = tc.get("function", {}).get("arguments", "")
                             try:
                                 a = json.loads(raw_args) if raw_args else {}
-                                short = {k: (v if not isinstance(v, str) or len(v) < 80 else v[:80] + "...") for k, v in a.items()}
+                                short = {
+                                    k: (
+                                        v
+                                        if not isinstance(v, str) or len(v) < 80
+                                        else v[:80] + "..."
+                                    )
+                                    for k, v in a.items()
+                                }
                             except Exception:
                                 short = raw_args[:80]
                             print(f"  [{i:>3}] CALL {name}({short})")
