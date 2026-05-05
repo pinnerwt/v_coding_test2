@@ -21,3 +21,9 @@ One question: if we cut the incorporated by reference phrase at the middle while
 Write this also in the end of skill: when we finished the run, conclude what could have been noticed earlier in the subagents/skill instructions. Know that the conclusion should be also anti-benchmaxxing, and ready to be updated in the skill file itself.
 
 I want to transform 10k extraction skill into an agent with serialized steps + different tools
+
+Try the agent and compare with the output from the skill.
+
+Tune the system prompt to avoid max steps
+
+Tune the prompt to avoid classification errors.
