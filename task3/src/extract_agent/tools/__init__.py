@@ -2,6 +2,7 @@ from . import (
     clean_and_load,
     done,
     find_anchors,
+    inspect_record,
     read_chars,
     regex_search,
     slice_items,
@@ -17,6 +18,7 @@ REGISTRY = {
     "write_output": write_output,
     "read_chars": read_chars,
     "regex_search": regex_search,
+    "inspect_record": inspect_record,
     "done": done,
 }
 
