@@ -264,7 +264,6 @@ a fixed tool catalogue (`tools/`); the orchestrator system prompt
 narrowly scoped escape hatches.
 
 - **Brainstorming prompt:** [`prompts/brainstorming.md`](./prompts/brainstorming.md)
-- **Pipeline notes:** [`docs/pipeline.md`](./docs/pipeline.md)
 - **Repo-level prompts:** [`../prompts/task3.md`](../prompts/task3.md)
 
 ## Architecture
@@ -341,11 +340,4 @@ fetch + extraction endpoint).
 
 ## Zeabur
 
-1. Connect this repo and point the service at `task3/`.
-2. Set the env vars above (at minimum `DEEPSEEK_API_KEY` and
-   `SEC_USER_AGENT`).
-3. Attach a persistent volume mounted at `/app/data` (cached archives
-   and extracted JSONs survive redeploys).
-4. Deploy. The service exposes port 8080.
-
-> **Deploy URL:** _pinner.top/_ (shared host with task 2)
+> **Deploy URL:** api.pinner.top/ (shared host with task 2)
