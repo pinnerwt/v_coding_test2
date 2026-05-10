@@ -75,7 +75,7 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     steps:
       - name: Download image artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: task2-agent-image
           path: /tmp
